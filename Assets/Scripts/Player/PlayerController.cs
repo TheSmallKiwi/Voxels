@@ -28,6 +28,10 @@ namespace Tuntenfisch.Player
         private float m_lookSensitivity = 0.05f;
         [SerializeField]
         private Camera m_camera;
+        
+        [Header("Interaction")]
+        [SerializeField]
+        private CSGPrimitiveType m_interactionPrimitiveType = CSGPrimitiveType.Cuboid;
 
         private CharacterController m_controller;
         private int m_playerLayerMask;
@@ -98,7 +102,7 @@ namespace Tuntenfisch.Player
 
             if (Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, ~m_playerLayerMask))
             {
-                GPUCSGPrimitive primitive = new GPUCSGPrimitive(CSGPrimitiveType.Sphere);
+                GPUCSGPrimitive primitive = new GPUCSGPrimitive(m_interactionPrimitiveType);
                 float3 scale = 4.0f;
 
                 WorldManager.Instance.DrawCSGPrimitiveHologram(primitive.PrimitiveType, hit.point, scale);
