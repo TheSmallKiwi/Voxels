@@ -22,7 +22,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_voxelA
       _node: {fileID: -9008572940600171931}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -34,7 +34,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxelB
       _node: {fileID: -9008572940600171931}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -46,7 +46,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxel
       _node: {fileID: -9008572940600171931}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxelA
@@ -104,7 +104,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_valueAndGradient
       _node: {fileID: -6033972957997777016}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -166,7 +166,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_valueAndGradient
       _node: {fileID: -4801048335892674458}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -215,7 +215,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_voxel
       _node: {fileID: -4527227182196153878}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -308,7 +308,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_valueAndGradient
       _node: {fileID: -2876368145125359047}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -320,7 +320,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxel
       _node: {fileID: -2876368145125359047}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxelA
@@ -359,7 +359,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_valueAndGradient
       _node: {fileID: -1847638076584077637}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -371,7 +371,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxel
       _node: {fileID: -1847638076584077637}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxelB
@@ -411,7 +411,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_voxelA
       _node: {fileID: -1748796865420827563}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -423,7 +423,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxelB
       _node: {fileID: -1748796865420827563}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -435,7 +435,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxel
       _node: {fileID: -1748796865420827563}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
@@ -1453,7 +1453,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_valueAndGradient
       _node: {fileID: 3386780224256037567}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -1503,7 +1503,7 @@ MonoBehaviour:
     values:
     - _fieldName: m_valueAndGradient
       _node: {fileID: 8934352735056946585}
-      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float2, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_valueAndGradient
@@ -1515,7 +1515,7 @@ MonoBehaviour:
       _dynamic: 0
     - _fieldName: m_voxel
       _node: {fileID: 8934352735056946585}
-      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=1.0.0.0,
+      _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxelB
