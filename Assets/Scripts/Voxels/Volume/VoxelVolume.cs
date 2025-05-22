@@ -7,6 +7,16 @@ using UnityEngine;
 
 namespace Tuntenfisch.Voxels.Volume
 {
+    /// <summary>
+    /// Represents a voxel-based volume that handles generation and modification of voxel data
+    /// through compute shaders. Used for constructing and manipulating volumetric data with
+    /// support for Constructive Solid Geometry (CSG) operations.
+    /// </summary>
+    /// <remarks>
+    /// This class depends on functionality provided by a linked <see cref="VoxelConfig"/> component.
+    /// It interacts with GPU-based compute buffers and coordinates their use for voxel volume
+    /// processing. Ensure the required components are attached to the GameObject before use.
+    /// </remarks>
     [RequireComponent(typeof(VoxelConfig))]
     public class VoxelVolume : MonoBehaviour
     {

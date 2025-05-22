@@ -14,23 +14,18 @@ namespace Tuntenfisch.Player
 
         private const float c_minDownwardVelocity = -2.0f;
 
-        [Header("Movement")]
-        [Min(1.0f)]
-        [SerializeField]
+        [Header("Movement")] [Min(1.0f)] [SerializeField]
         private float m_movementSpeed = 5.0f;
-        [Min(1.0f)]
-        [SerializeField]
-        private float m_jumpHeight = 1.5f;
 
-        [Header("Look")]
-        [Range(0.0f, 1.0f)]
-        [SerializeField]
+        [Min(1.0f)] [SerializeField] private float m_jumpHeight = 1.5f;
+        [SerializeField] private bool m_flightModeEnabled = false;
+
+        [Header("Look")] [Range(0.0f, 1.0f)] [SerializeField]
         private float m_lookSensitivity = 0.05f;
-        [SerializeField]
-        private Camera m_camera;
-        
-        [Header("Interaction")]
-        [SerializeField]
+
+        [SerializeField] private Camera m_camera;
+
+        [Header("Interaction")] [SerializeField]
         private CSGPrimitiveType m_interactionPrimitiveType = CSGPrimitiveType.Cuboid;
 
         private CharacterController m_controller;
@@ -43,6 +38,7 @@ namespace Tuntenfisch.Player
         private float3 m_velocity;
         private bool m_primaryDown;
         private bool m_secondaryDown;
+        private float m_flyDelta;
 
         private void Start()
         {
@@ -62,6 +58,8 @@ namespace Tuntenfisch.Player
 
         public void OnJump() => m_wantsToJump = m_controller.isGrounded;
 
+        public void OnFly(InputValue value) => m_flyDelta = value.Get<float>();
+
         public void OnLook(InputValue value) => m_lookDelta = value.Get<Vector2>();
 
         public void OnPrimary(InputValue value) => m_primaryDown = value.isPressed;
@@ -69,6 +67,22 @@ namespace Tuntenfisch.Player
         public void OnSecondary(InputValue value) => m_secondaryDown = value.isPressed;
 
         private void ApplyMovement()
+        {
+            if (!m_flightModeEnabled) HandleJumpAndFall();
+            else HandleFlying();
+
+            m_velocity.xz =
+                (((float3)transform.right).xz * m_moveDelta.x + ((float3)transform.forward).xz * m_moveDelta.y) *
+                m_movementSpeed;
+            m_controller.Move(m_velocity * Time.deltaTime);
+        }
+
+        private void HandleFlying()
+        {
+            m_velocity.y = m_flyDelta * m_movementSpeed * 2.0f;
+        }
+
+        private void HandleJumpAndFall()
         {
             if (m_controller.isGrounded)
             {
@@ -79,10 +93,8 @@ namespace Tuntenfisch.Player
             {
                 m_velocity.y += Gravity * Time.deltaTime;
             }
-
-            m_velocity.xz = (((float3)transform.right).xz * m_moveDelta.x + ((float3)transform.forward).xz * m_moveDelta.y) * m_movementSpeed;
-            m_controller.Move(m_velocity * Time.deltaTime);
         }
+
 
         private void ApplyLook()
         {
@@ -109,12 +121,14 @@ namespace Tuntenfisch.Player
 
                 if (m_primaryDown)
                 {
-                    WorldManager.Instance.ApplyCSGOperation(new GPUCSGOperator(CSGOperatorIndex.Union), primitive, MaterialIndex.Dirt, hit.point, scale);
+                    WorldManager.Instance.ApplyCSGOperation(new GPUCSGOperator(CSGOperatorIndex.Union), primitive,
+                        MaterialIndex.Dirt, hit.point, scale);
                 }
 
                 if (m_secondaryDown)
                 {
-                    WorldManager.Instance.ApplyCSGOperation(new GPUCSGOperator(CSGOperatorIndex.Difference), primitive, default, hit.point, scale);
+                    WorldManager.Instance.ApplyCSGOperation(new GPUCSGOperator(CSGOperatorIndex.Difference), primitive,
+                        default, hit.point, scale);
                 }
             }
         }
