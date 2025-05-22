@@ -9,11 +9,11 @@ namespace Tuntenfisch.Generics
         {
             get
             {
-                if (s_instance == null)
+                if (!s_instance)
                 {
-                    s_instance = FindObjectOfType<T>();
+                    s_instance = FindFirstObjectByType<T>();
 
-                    if (s_instance == null)
+                    if (!s_instance)
                     {
                         throw new ArgumentNullException(nameof(s_instance));
                     }
