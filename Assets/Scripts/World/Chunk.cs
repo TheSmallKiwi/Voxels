@@ -21,6 +21,8 @@ namespace Tuntenfisch.World
         private int m_targetLOD;
         private int m_vertexCount;
         private int m_triangleCount;
+        
+        private int3 m_chunkCoordinate; 
 
         private Mesh m_mesh;
         private MeshFilter m_meshFilter;
@@ -183,7 +185,18 @@ namespace Tuntenfisch.World
 
         public void ApplyCSGPrimitiveOperation(GPUCSGOperator csgOperator, GPUCSGPrimitive csgPrimitive, MaterialIndex materialIndex, Matrix4x4 worldToObjectMatrix)
         {
-            m_voxelVolumeCSGOperations.Add(new GPUVoxelVolumeCSGOperation(csgOperator, csgPrimitive, materialIndex, worldToObjectMatrix));
+            GPUVoxelVolumeCSGOperation operation = new GPUVoxelVolumeCSGOperation(csgOperator, csgPrimitive, materialIndex, worldToObjectMatrix);
+            
+            // Add to local list for immediate processing
+            m_voxelVolumeCSGOperations.Add(operation);
+            
+            // Store in WorldManager's dictionary for persistence
+            if (!WorldManager.Instance.ChunkHasModifications(m_chunkCoordinate))
+            {
+                WorldManager.Instance.InitializeChunkModifications(m_chunkCoordinate);
+            }
+            WorldManager.Instance.AddChunkModification(m_chunkCoordinate, operation);
+            
             m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
         }
 
@@ -232,7 +245,26 @@ namespace Tuntenfisch.World
             m_meshCollider = GetComponent<MeshCollider>();
             m_onMeshGeneratedDelegate = OnMeshGenerated;
         }
-
+        
+        public void ApplyStoredModifications(int3 chunkCoordinate)
+        {
+            var storedModifications = WorldManager.Instance.GetChunkModifications(chunkCoordinate);
+            if (storedModifications != null && storedModifications.Count > 0)
+            {
+                // Apply all stored modifications at once
+                foreach (var operation in storedModifications)
+                {
+                    m_voxelVolumeCSGOperations.Add(operation);
+                }
+                m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
+            }
+        }
+        
+        public void SetCoordinate(int3 chunkCoordinate)
+        {
+            m_chunkCoordinate = chunkCoordinate;
+        }
+        
         private void ApplyRenderMaterial() => m_meshRenderer.material = WorldManager.VoxelConfig.MaterialConfig.RenderMaterial;
 
         [Flags]

@@ -13,6 +13,14 @@ using UnityEngine.Assertions;
 
 namespace Tuntenfisch.World
 {
+    /// <summary>
+    /// Manages voxel-related components and operations in the world, serving as a high-level interface for voxel manipulation and rendering.
+    /// </summary>
+    /// <remarks>
+    /// This class is implemented as a singleton. It provides access to primary voxel system components
+    /// including <see cref="VoxelConfig"/>, <see cref="VoxelVolume"/>, and <see cref="DualContouring"/>.
+    /// Additionally, it facilitates operations such as rendering, editing, and interacting with voxel-based objects using Constructive Solid Geometry (CSG) techniques.
+    /// </remarks>
     [RequireComponent(typeof(VoxelConfig), typeof(VoxelVolume), typeof(DualContouring))]
     [RequireComponent(typeof(CSGUtility))]
     public class WorldManager : SingletonComponent<WorldManager>
@@ -44,6 +52,7 @@ namespace Tuntenfisch.World
         private Queue<(int3, float3, int)> m_chunksToProcess;
         private HashSet<int3> m_processedChunkCoordinates;
         private float3 m_chunkDimensions;
+        private Dictionary<int3, List<GPUVoxelVolumeCSGOperation>> m_chunkModifications;
 
         // We don't want to update the world every frame.
         private float3 m_lastViewerPosition;
@@ -73,6 +82,8 @@ namespace Tuntenfisch.World
             m_lastViewerPosition = m_viewer.position;
             m_updateIntervalSquared = math.pow(m_updateInterval, 2.0f);
             m_lodDistancesSquared = CalculateLodDistancesSquared();
+            
+            m_chunkModifications = new Dictionary<int3, List<GPUVoxelVolumeCSGOperation>>();
 
             UpdateWorld(m_viewer.position);
         }
@@ -197,6 +208,8 @@ namespace Tuntenfisch.World
                     chunk.transform.position = chunkPosition;
                     chunk.RegenerateVoxelVolume();
                     chunk.RegenerateMesh(lod);
+                    chunk.SetCoordinate(chunkCoordinate);
+                    chunk.ApplyStoredModifications(chunkCoordinate);
                     m_chunks[chunkCoordinate] = chunk;
                 }
 
@@ -300,5 +313,30 @@ namespace Tuntenfisch.World
                 chunk.RegenerateMesh();
             }
         }
+
+        public bool ChunkHasModifications(int3 chunkCoordinate)
+        {
+            return m_chunkModifications.ContainsKey(chunkCoordinate);
+        }
+
+        public void InitializeChunkModifications(int3 chunkCoordinate)
+        {
+            m_chunkModifications[chunkCoordinate] = new List<GPUVoxelVolumeCSGOperation>();
+        }
+
+        public void AddChunkModification(int3 chunkCoordinate, GPUVoxelVolumeCSGOperation operation)
+        {
+            m_chunkModifications[chunkCoordinate].Add(operation);
+        }
+        
+        public List<GPUVoxelVolumeCSGOperation> GetChunkModifications(int3 chunkCoordinate)
+        {
+            if (m_chunkModifications.TryGetValue(chunkCoordinate, out var modifications))
+            {
+                return modifications;
+            }
+            return null;
+        }
+
     }
 }
