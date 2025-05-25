@@ -13,7 +13,7 @@ namespace Tuntenfisch.Editor.Voxels
         private ComputeBuffer m_noiseParametersBuffer;
         private int m_noisePreviewKernel = -1;
         private bool m_isInitialized = false;
-        private const int m_previewSize = 256; // Smaller size for node view
+        private const int m_previewSize = 200; // Smaller size for node view
         
         public override void OnCreate()
         {

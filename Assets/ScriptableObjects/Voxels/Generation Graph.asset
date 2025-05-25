@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: CSG Operation
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 216, y: -424}
+  position: {x: 104, y: -232}
   ports:
     keys:
     - m_voxelA
@@ -49,8 +49,8 @@ MonoBehaviour:
       _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
       connections:
-      - fieldName: m_voxel
-        node: {fileID: -4527227182196153878}
+      - fieldName: m_voxelA
+        node: {fileID: -1748796865420827563}
         reroutePoints: []
       _direction: 1
       _connectionType: 1
@@ -69,7 +69,7 @@ MonoBehaviour:
     y: 0
     z: 0
   m_csgOperator:
-    m_operatorIndex: 4
+    m_operatorIndex: 3
     m_smoothing: 20
 --- !u!114 &-6033972957997777016
 MonoBehaviour:
@@ -121,14 +121,14 @@ MonoBehaviour:
   m_noiseParameters:
     m_seed: 0
     m_noiseAxes: 0
-    m_noiseType: 2
-    m_numberOfOctaves: 18
-    m_initialAmplitude: 5
+    m_noiseType: 0
+    m_numberOfOctaves: 10
+    m_initialAmplitude: 30
     m_initialFrequency:
-      x: 0.00011
-      y: 0.00001
-      z: 0.00011
-    m_persistence: 0.79
+      x: 0.005
+      y: 0.005
+      z: 0.005
+    m_persistence: 0.46
     m_lacunarity:
       x: 2
       y: 2
@@ -185,12 +185,12 @@ MonoBehaviour:
     m_noiseAxes: 0
     m_noiseType: 1
     m_numberOfOctaves: 8
-    m_initialAmplitude: 1
+    m_initialAmplitude: 16.65
     m_initialFrequency:
       x: 0.005
       y: 0.005
       z: 0.005
-    m_persistence: 0.02
+    m_persistence: 0.35
     m_lacunarity:
       x: 2
       y: 2
@@ -208,7 +208,7 @@ MonoBehaviour:
   m_Name: Output
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: 504, y: -120}
+  position: {x: 584, y: -184}
   ports:
     keys:
     - m_voxel
@@ -219,7 +219,7 @@ MonoBehaviour:
         Culture=neutral, PublicKeyToken=null
       connections:
       - fieldName: m_voxel
-        node: {fileID: -9008572940600171931}
+        node: {fileID: -1748796865420827563}
         reroutePoints: []
       _direction: 0
       _connectionType: 1
@@ -242,7 +242,7 @@ MonoBehaviour:
   m_Name: Transform
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -1480, y: 200}
+  position: {x: -1064, y: 440}
   ports:
     keys:
     - m_position
@@ -351,7 +351,7 @@ MonoBehaviour:
   m_Name: Material
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -680, y: 200}
+  position: {x: -264, y: 440}
   ports:
     keys:
     - m_valueAndGradient
@@ -373,7 +373,10 @@ MonoBehaviour:
       _node: {fileID: -1847638076584077637}
       _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: m_voxelB
+        node: {fileID: -1748796865420827563}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -399,7 +402,7 @@ MonoBehaviour:
   m_Name: CSG Operation
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -136, y: 328}
+  position: {x: 344, y: -24}
   ports:
     keys:
     - m_voxelA
@@ -410,7 +413,10 @@ MonoBehaviour:
       _node: {fileID: -1748796865420827563}
       _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: m_voxel
+        node: {fileID: -9008572940600171931}
+        reroutePoints: []
       _direction: 0
       _connectionType: 1
       _typeConstraint: 2
@@ -419,7 +425,10 @@ MonoBehaviour:
       _node: {fileID: -1748796865420827563}
       _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: m_voxel
+        node: {fileID: -1847638076584077637}
+        reroutePoints: []
       _direction: 0
       _connectionType: 1
       _typeConstraint: 2
@@ -428,7 +437,10 @@ MonoBehaviour:
       _node: {fileID: -1748796865420827563}
       _typeQualifiedName: Unity.Mathematics.float3, Unity.Mathematics, Version=0.0.0.0,
         Culture=neutral, PublicKeyToken=null
-      connections: []
+      connections:
+      - fieldName: m_voxel
+        node: {fileID: -4527227182196153878}
+        reroutePoints: []
       _direction: 1
       _connectionType: 1
       _typeConstraint: 2
@@ -447,7 +459,7 @@ MonoBehaviour:
     z: 0
   m_csgOperator:
     m_operatorIndex: 4
-    m_smoothing: 5
+    m_smoothing: 20
 --- !u!114 &-1411315570092343662
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -634,14 +646,14 @@ MonoBehaviour:
     m_noiseParameters:
       m_seed: 0
       m_noiseAxes: 0
-      m_noiseType: 2
-      m_numberOfOctaves: 18
-      m_initialAmplitude: 5
+      m_noiseType: 0
+      m_numberOfOctaves: 10
+      m_initialAmplitude: 30
       m_initialFrequency:
-        x: 0.00011
-        y: 0.00001
-        z: 0.00011
-      m_persistence: 0.79
+        x: 0.005
+        y: 0.005
+        z: 0.005
+      m_persistence: 0.46
       m_lacunarity:
         x: 2
         y: 2
@@ -753,12 +765,12 @@ MonoBehaviour:
       m_noiseAxes: 0
       m_noiseType: 1
       m_numberOfOctaves: 8
-      m_initialAmplitude: 1
+      m_initialAmplitude: 16.65
       m_initialFrequency:
         x: 0.005
         y: 0.005
         z: 0.005
-      m_persistence: 0.02
+      m_persistence: 0.35
       m_lacunarity:
         x: 2
         y: 2
@@ -805,6 +817,240 @@ MonoBehaviour:
     m_csgPrimitive:
       m_primitiveType: 0
     m_materialIndex: 2
+    m_csgOperator:
+      m_operatorIndex: 0
+      m_smoothing: 0
+  - m_nodeType: 6
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 0
+      m_initialAmplitude: 0
+      m_initialFrequency:
+        x: 0
+        y: 0
+        z: 0
+      m_persistence: 0
+      m_lacunarity:
+        x: 0
+        y: 0
+        z: 0
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 0
+    m_csgOperator:
+      m_operatorIndex: 3
+      m_smoothing: 20
+  - m_nodeType: 0
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 0
+      m_initialAmplitude: 0
+      m_initialFrequency:
+        x: 0
+        y: 0
+        z: 0
+      m_persistence: 0
+      m_lacunarity:
+        x: 0
+        y: 0
+        z: 0
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 0
+    m_csgOperator:
+      m_operatorIndex: 0
+      m_smoothing: 0
+  - m_nodeType: 1
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: -10
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 0
+      m_initialAmplitude: 0
+      m_initialFrequency:
+        x: 0
+        y: 0
+        z: 0
+      m_persistence: 0
+      m_lacunarity:
+        x: 0
+        y: 0
+        z: 0
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 0
+    m_csgOperator:
+      m_operatorIndex: 0
+      m_smoothing: 0
+  - m_nodeType: 2
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 1
+      m_initialAmplitude: 20
+      m_initialFrequency:
+        x: 0.02
+        y: 0.02
+        z: 0.02
+      m_persistence: 0.52
+      m_lacunarity:
+        x: 2
+        y: 2
+        z: 2
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 0
+    m_csgOperator:
+      m_operatorIndex: 0
+      m_smoothing: 0
+  - m_nodeType: 3
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 10
+      m_initialAmplitude: 1
+      m_initialFrequency:
+        x: 0.002
+        y: 0.002
+        z: 0.002
+      m_persistence: 0.38
+      m_lacunarity:
+        x: 2
+        y: 2
+        z: 2
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 0
+    m_csgOperator:
+      m_operatorIndex: 0
+      m_smoothing: 0
+  - m_nodeType: 5
+    m_transformMatrix:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_noiseParameters:
+      m_seed: 0
+      m_noiseAxes: 0
+      m_noiseType: 0
+      m_numberOfOctaves: 0
+      m_initialAmplitude: 0
+      m_initialFrequency:
+        x: 0
+        y: 0
+        z: 0
+      m_persistence: 0
+      m_lacunarity:
+        x: 0
+        y: 0
+        z: 0
+    m_csgPrimitive:
+      m_primitiveType: 0
+    m_materialIndex: 3
     m_csgOperator:
       m_operatorIndex: 0
       m_smoothing: 0
@@ -961,7 +1207,7 @@ MonoBehaviour:
   m_Name: Position
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -1528, y: 312}
+  position: {x: -1288, y: 456}
   ports:
     keys:
     - m_position
@@ -992,7 +1238,7 @@ MonoBehaviour:
   m_Name: Noise
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -968, y: 200}
+  position: {x: -552, y: 440}
   ports:
     keys:
     - m_position
@@ -1030,13 +1276,13 @@ MonoBehaviour:
     m_seed: 0
     m_noiseAxes: 0
     m_noiseType: 0
-    m_numberOfOctaves: 14
-    m_initialAmplitude: 22
+    m_numberOfOctaves: 10
+    m_initialAmplitude: 1
     m_initialFrequency:
       x: 0.002
       y: 0.002
       z: 0.002
-    m_persistence: 0.5
+    m_persistence: 0.38
     m_lacunarity:
       x: 2
       y: 2
@@ -1105,7 +1351,7 @@ MonoBehaviour:
   m_Name: Domain Warp
   m_EditorClassIdentifier: 
   graph: {fileID: 11400000}
-  position: {x: -1256, y: 200}
+  position: {x: -840, y: 440}
   ports:
     keys:
     - m_position
@@ -1147,7 +1393,7 @@ MonoBehaviour:
       x: 0.02
       y: 0.02
       z: 0.02
-    m_persistence: 0.5
+    m_persistence: 0.52
     m_lacunarity:
       x: 2
       y: 2
