@@ -10,15 +10,10 @@ namespace Tuntenfisch.Player
     [RequireComponent(typeof(CharacterController), typeof(PlayerInput))]
     public class PlayerController : MonoBehaviour
     {
-        private float Gravity => Physics.gravity.y;
-
-        private const float c_minDownwardVelocity = -2.0f;
-
         [Header("Movement")] [Min(1.0f)] [SerializeField]
         private float m_movementSpeed = 5.0f;
 
-        [Min(1.0f)] [SerializeField] private float m_jumpHeight = 1.5f;
-        [SerializeField] private bool m_flightModeEnabled = false;
+        [Min(1.0f)] [SerializeField] private float m_sprintMultiplier = 3.0f;
 
         [Header("Look")] [Range(0.0f, 1.0f)] [SerializeField]
         private float m_lookSensitivity = 0.05f;
@@ -32,13 +27,13 @@ namespace Tuntenfisch.Player
         private int m_playerLayerMask;
 
         private float2 m_moveDelta;
-        private bool m_wantsToJump;
         private float2 m_lookDelta;
         private float2 m_rotation;
         private float3 m_velocity;
         private bool m_primaryDown;
         private bool m_secondaryDown;
-        private float m_flyDelta;
+        private float m_verticalMoveDelta;
+        private bool m_sprintDown;
 
         private void Start()
         {
@@ -55,46 +50,48 @@ namespace Tuntenfisch.Player
         }
 
         public void OnMove(InputValue value) => m_moveDelta = value.Get<Vector2>();
-
-        public void OnJump() => m_wantsToJump = m_controller.isGrounded;
-
-        public void OnFly(InputValue value) => m_flyDelta = value.Get<float>();
+        
+        public void OnVerticalMove(InputValue value) => m_verticalMoveDelta = value.Get<float>();
 
         public void OnLook(InputValue value) => m_lookDelta = value.Get<Vector2>();
 
         public void OnPrimary(InputValue value) => m_primaryDown = value.isPressed;
 
         public void OnSecondary(InputValue value) => m_secondaryDown = value.isPressed;
+        
+        public void OnSprint(InputValue value) => m_sprintDown = value.isPressed;
 
         private void ApplyMovement()
         {
-            if (!m_flightModeEnabled) HandleJumpAndFall();
-            else HandleFlying();
-
-            m_velocity.xz =
-                (((float3)transform.right).xz * m_moveDelta.x + ((float3)transform.forward).xz * m_moveDelta.y) *
-                m_movementSpeed;
-            m_controller.Move(m_velocity * Time.deltaTime);
-        }
-
-        private void HandleFlying()
-        {
-            m_velocity.y = m_flyDelta * m_movementSpeed * 2.0f;
-        }
-
-        private void HandleJumpAndFall()
-        {
-            if (m_controller.isGrounded)
+            // Calculate the current movement speed (with sprint multiplier if sprinting)
+            float currentSpeed = m_sprintDown ? m_movementSpeed * m_sprintMultiplier : m_movementSpeed;
+            
+            // Create the movement vector in camera-relative space
+            Vector3 movement = Vector3.zero;
+            
+            // Forward/backward - use camera's forward vector (including vertical component)
+            if (m_moveDelta.y != 0)
             {
-                m_velocity.y = m_wantsToJump ? math.sqrt(-2.0f * Gravity * m_jumpHeight) : c_minDownwardVelocity;
-                m_wantsToJump = false;
+                movement += m_camera.transform.forward * m_moveDelta.y;
             }
-            else
+            
+            // Left/right - use camera's right vector (keeping it horizontal)
+            if (m_moveDelta.x != 0)
             {
-                m_velocity.y += Gravity * Time.deltaTime;
+                // For side-to-side movement, we want to stay on the horizontal plane
+                Vector3 rightDir = m_camera.transform.right;
+                movement += rightDir * m_moveDelta.x;
             }
+            
+            // Up/down movement (typically Q/E keys) - world space up/down
+            if (m_verticalMoveDelta != 0)
+            {
+                movement += Vector3.up * m_verticalMoveDelta;
+            }
+            
+            // Apply the movement
+            m_controller.Move(movement * currentSpeed * Time.deltaTime);
         }
-
 
         private void ApplyLook()
         {

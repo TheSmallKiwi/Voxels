@@ -90,6 +90,7 @@ namespace Tuntenfisch.World
 
         private void Update()
         {
+            // We don't want to update the world every frame.
             if (math.lengthsq((float3)m_viewer.position - m_lastViewerPosition) >= m_updateIntervalSquared)
             {
                 m_lastViewerPosition = m_viewer.position;

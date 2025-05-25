@@ -1,0 +1,56 @@
+﻿// NoisePreviewCompute.compute
+#pragma kernel GenerateNoisePreview
+
+// Include the project's noise functions
+#include "Assets/Compute/Voxels/Include/Noise.hlsl"
+
+// Output texture
+RWTexture2D<float4> Result;
+
+// Noise parameters buffer
+StructuredBuffer<NoiseParameters> noiseParameterBuffer;
+
+// Preview parameters
+int PreviewPlane; // 0 = XZ, 1 = XY
+int TextureSize;
+
+[numthreads(8,8,1)]
+void GenerateNoisePreview(uint3 id : SV_DispatchThreadID)
+{
+    // Skip pixels outside the texture
+    if (id.x >= (uint)TextureSize || id.y >= (uint)TextureSize)
+        return;
+        
+    // Map pixel coordinates to world space coordinates [-1, 1]
+    float2 uv = float2(id.xy) / float2(TextureSize, TextureSize) * 2.0 - 1.0;
+    
+    // Define position based on preview plane
+    float3 position;
+    if (PreviewPlane == 0) // XZ plane
+    {
+        position = float3(uv.x, 0.0, uv.y) * 200.0; // Scale to get a good preview range
+    }
+    else // XY plane
+    {
+        position = float3(uv.x, uv.y, 0.0) * 200.0; // Scale to get a good preview range
+    }
+    
+    // Generate noise using the project's noise function
+    float4 valueAndGradient = GenerateFBMNoise(position, noiseParameterBuffer[0]);
+    
+    // Map noise value to color (0 to 1 range)
+    float normalizedValue = valueAndGradient.x / noiseParameterBuffer[0].initialAmplitude;
+    
+    // Store result
+    // Result[id.xy] = float4(normalizedValue, normalizedValue, normalizedValue, 1.0);
+
+    // Alternative visualizations you could enable:
+    // Show gradient as color
+    float3 gradient = normalizedValue * normalize(valueAndGradient.yzw) * 0.5 + 0.5;
+    Result[id.xy] = float4(gradient, 1.0);
+    
+    // Show both value (brightness) and gradient (color)
+    // float3 gradient = normalize(valueAndGradient.yzw) * 0.5 + 0.5;
+    // float value = (valueAndGradient.x + 1.0) * 0.5;
+    // Result[id.xy] = float4(gradient * value, 1.0);
+}

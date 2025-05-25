@@ -174,7 +174,7 @@ MonoBehaviour:
   m_lodDistances:
   - 200
   - 400
-  - 800
+  - 450
 --- !u!114 &337836006
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -350,11 +350,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_movementSpeed: 20
-  m_jumpHeight: 10
-  m_flightModeEnabled: 1
+  m_sprintMultiplier: 3
   m_lookSensitivity: 0.05
   m_camera: {fileID: 1169219614}
-  m_interactionPrimitiveType: 1
+  m_interactionPrimitiveType: 0
 --- !u!114 &1023658863
 MonoBehaviour:
   m_ObjectHideFlags: 0
