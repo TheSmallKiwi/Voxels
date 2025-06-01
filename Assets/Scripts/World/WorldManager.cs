@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Tuntenfisch.Fluids;
 using Tuntenfisch.Generics;
 using Tuntenfisch.Generics.Pool;
 using Tuntenfisch.Voxels;
@@ -15,10 +16,11 @@ namespace Tuntenfisch.World
 {
     /// <summary>
     /// Manages voxel-related components and operations in the world, serving as a high-level interface for voxel manipulation and rendering.
+    /// Now includes fluid simulation integration and coordination between solid and fluid systems.
     /// </summary>
     /// <remarks>
     /// This class is implemented as a singleton. It provides access to primary voxel system components
-    /// including <see cref="VoxelConfig"/>, <see cref="VoxelVolume"/>, and <see cref="DualContouring"/>.
+    /// including <see cref="VoxelConfig"/>, <see cref="VoxelVolume"/>, <see cref="DualContouring"/>, and <see cref="FluidSimulation"/>.
     /// Additionally, it facilitates operations such as rendering, editing, and interacting with voxel-based objects using Constructive Solid Geometry (CSG) techniques.
     /// </remarks>
     [RequireComponent(typeof(VoxelConfig), typeof(VoxelVolume), typeof(DualContouring))]
@@ -28,9 +30,11 @@ namespace Tuntenfisch.World
         public static VoxelConfig VoxelConfig => Instance.m_voxelConfig;
         public static VoxelVolume VoxelVolume => Instance.m_voxelVolume;
         public static DualContouring DualContouring => Instance.m_dualContouring;
+        public static FluidSimulation FluidSimulation => Instance.m_fluidSimulation;
 
         private float ViewDistanceSquared => m_lodDistancesSquared[m_lodDistancesSquared.Length - 1];
 
+        [Header("World Settings")]
         [SerializeField]
         private Transform m_viewer;
         [SerializeField]
@@ -42,10 +46,17 @@ namespace Tuntenfisch.World
         [SerializeField]
         private float[] m_lodDistances;
 
+        [Header("Fluid Settings")]
+        [SerializeField]
+        private bool m_enableFluidSimulation = true;
+        [SerializeField]
+        private float m_fluidUpdateInterval = 10.0f; // Smaller interval for more frequent fluid updates
+
         private VoxelConfig m_voxelConfig;
         private VoxelVolume m_voxelVolume;
         private DualContouring m_dualContouring;
         private CSGUtility m_csgUtility;
+        private FluidSimulation m_fluidSimulation;
         private ObjectPool<Chunk> m_chunkPool;
         private Dictionary<int3, Chunk> m_chunks;
         private List<int3> m_chunksOutsideOfViewDistance;
@@ -56,7 +67,9 @@ namespace Tuntenfisch.World
 
         // We don't want to update the world every frame.
         private float3 m_lastViewerPosition;
+        private float3 m_lastFluidUpdatePosition;
         private float m_updateIntervalSquared;
+        private float m_fluidUpdateIntervalSquared;
         private float[] m_lodDistancesSquared;
 
         private void Start()
@@ -71,6 +84,14 @@ namespace Tuntenfisch.World
             m_voxelVolume = GetComponent<VoxelVolume>();
             m_dualContouring = GetComponent<DualContouring>();
             m_csgUtility = GetComponent<CSGUtility>();
+            
+            // FluidSimulation is optional
+            m_fluidSimulation = GetComponent<FluidSimulation>();
+            if (m_fluidSimulation == null && m_enableFluidSimulation)
+            {
+                Debug.LogWarning("FluidSimulation component not found. Fluid simulation will be disabled.");
+                m_enableFluidSimulation = false;
+            }
 
             m_chunkPool = new ObjectPool<Chunk>(() => { return Instantiate(m_chunkPrefab, transform).GetComponent<Chunk>(); }, m_initialChunkPoolPopulation);
             m_chunks = new Dictionary<int3, Chunk>();
@@ -80,7 +101,9 @@ namespace Tuntenfisch.World
             m_chunkDimensions = CalculateChunkDimensions();
 
             m_lastViewerPosition = m_viewer.position;
+            m_lastFluidUpdatePosition = m_viewer.position;
             m_updateIntervalSquared = math.pow(m_updateInterval, 2.0f);
+            m_fluidUpdateIntervalSquared = math.pow(m_fluidUpdateInterval, 2.0f);
             m_lodDistancesSquared = CalculateLodDistancesSquared();
             
             m_chunkModifications = new Dictionary<int3, List<GPUVoxelVolumeCSGOperation>>();
@@ -90,11 +113,21 @@ namespace Tuntenfisch.World
 
         private void Update()
         {
-            // We don't want to update the world every frame.
-            if (math.lengthsq((float3)m_viewer.position - m_lastViewerPosition) >= m_updateIntervalSquared)
+            float3 currentViewerPosition = m_viewer.position;
+            
+            // Update world geometry (terrain, structures) less frequently
+            if (math.lengthsq(currentViewerPosition - m_lastViewerPosition) >= m_updateIntervalSquared)
             {
-                m_lastViewerPosition = m_viewer.position;
-                UpdateWorld(m_viewer.position);
+                m_lastViewerPosition = currentViewerPosition;
+                UpdateWorld(currentViewerPosition);
+            }
+            
+            // Update fluid simulation more frequently for responsiveness
+            if (m_enableFluidSimulation && 
+                math.lengthsq(currentViewerPosition - m_lastFluidUpdatePosition) >= m_fluidUpdateIntervalSquared)
+            {
+                m_lastFluidUpdatePosition = currentViewerPosition;
+                UpdateFluidSimulation(currentViewerPosition);
             }
         }
 
@@ -131,10 +164,35 @@ namespace Tuntenfisch.World
                         if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
                         {
                             chunk.ApplyCSGPrimitiveOperation(csgOperator, csgPrimitive, materialIndex, worldToObjectMatrix);
+                            
+                            // If fluid simulation is enabled, update fluid boundaries for this chunk
+                            if (m_enableFluidSimulation && m_fluidSimulation != null)
+                            {
+                                UpdateChunkFluidBoundaries(chunk);
+                            }
                         }
                     }
                 }
             }
+        }
+
+        public void AddFluidSource(float3 position, float3 velocity, float radius, float amount, MaterialIndex fluidMaterial = MaterialIndex.Water)
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+            {
+                Debug.LogWarning("Fluid simulation is not available. Cannot add fluid source.");
+                return;
+            }
+
+            m_fluidSimulation.SetFluidSource(position, velocity, radius, amount);
+        }
+
+        public void RemoveFluidSource()
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+                return;
+
+            m_fluidSimulation.DisableFluidSource();
         }
 
         public bool GetMaterialFromRaycastHit(RaycastHit hit, out MaterialIndex materialIndex)
@@ -160,6 +218,54 @@ namespace Tuntenfisch.World
         {
             DestroyChunksOutsideViewDistance(viewerPosition);
             CreateChunksWithinViewDistance(viewerPosition);
+        }
+
+        private void UpdateFluidSimulation(float3 viewerPosition)
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+                return;
+
+            // Update fluid simulation for all active chunks
+            foreach (var chunk in m_chunks.Values)
+            {
+                UpdateChunkFluidSimulation(chunk);
+            }
+        }
+
+        private void UpdateChunkFluidSimulation(Chunk chunk)
+        {
+            if (chunk == null || !chunk.gameObject.activeInHierarchy)
+                return;
+
+            // Update fluid boundaries from solid voxel volume
+            UpdateChunkFluidBoundaries(chunk);
+
+            // Generate fluid mesh if needed
+            RegenerateChunkFluidMesh(chunk);
+        }
+
+        private void UpdateChunkFluidBoundaries(Chunk chunk)
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+                return;
+
+            // Update fluid simulation boundaries using the chunk's solid voxel volume
+            m_fluidSimulation.UpdateBoundariesFromVoxelVolume(
+                chunk.VoxelVolumeBuffer, 
+                chunk.transform.position
+            );
+        }
+
+        private void RegenerateChunkFluidMesh(Chunk chunk)
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+                return;
+
+            // Convert fluid volume to voxel volume for mesh generation
+            m_fluidSimulation.ConvertFluidToVoxelVolume(chunk.transform.position);
+
+            // Generate fluid mesh using the converted voxel volume
+            chunk.RegenerateFluidMesh(m_fluidSimulation.TempVoxelVolumeBuffer);
         }
 
         private void DestroyChunksOutsideViewDistance(float3 viewerPosition)
@@ -212,6 +318,12 @@ namespace Tuntenfisch.World
                     chunk.SetCoordinate(chunkCoordinate);
                     chunk.ApplyStoredModifications(chunkCoordinate);
                     m_chunks[chunkCoordinate] = chunk;
+
+                    // If fluid simulation is enabled, initialize fluid boundaries for new chunk
+                    if (m_enableFluidSimulation && m_fluidSimulation != null)
+                    {
+                        UpdateChunkFluidBoundaries(chunk);
+                    }
                 }
 
                 EnqueueChunk(chunkCoordinate + new int3(1, 0, 0), viewerPosition);
@@ -284,6 +396,7 @@ namespace Tuntenfisch.World
             }
 
             m_updateIntervalSquared = math.pow(m_updateInterval, 2.0f);
+            m_fluidUpdateIntervalSquared = math.pow(m_fluidUpdateInterval, 2.0f);
             m_lodDistancesSquared = CalculateLodDistancesSquared();
             m_chunkDimensions = CalculateChunkDimensions();
 
@@ -312,6 +425,12 @@ namespace Tuntenfisch.World
             {
                 chunk.RegenerateVoxelVolume();
                 chunk.RegenerateMesh();
+                
+                // Update fluid boundaries when terrain changes
+                if (m_enableFluidSimulation && m_fluidSimulation != null)
+                {
+                    UpdateChunkFluidBoundaries(chunk);
+                }
             }
         }
 
@@ -338,6 +457,5 @@ namespace Tuntenfisch.World
             }
             return null;
         }
-
     }
 }
