@@ -5,11 +5,15 @@
 #pragma kernel ApplyBoundaryConditions
 #pragma kernel AddFluidSource
 #pragma kernel UpdateBoundariesFromSolids
+#pragma kernel ConvertFluidToVoxelVolume
 
 #include "Assets/Compute/Fluids/Include/FluidVolume.hlsl"
 
 // Additional buffers
 RWStructuredBuffer<float> divergenceBuffer; // Temporary buffer for divergence
+
+RWStructuredBuffer<PackedVoxel> outputVoxelVolume; // For DualContouring
+float fluidDensityThreshold;
 
 // Simulation parameters
 float deltaTime;
@@ -49,6 +53,7 @@ void Advection(uint3 id : SV_DispatchThreadID)
     
     // Create new voxel with advected values
     FluidVoxel newVoxel = FluidVoxel::Create();
+    newVoxel.voxel = sampledVoxel.voxel;
     newVoxel.density = sampledVoxel.density;
     newVoxel.velocity = sampledVoxel.velocity;
     newVoxel.temperature = sampledVoxel.temperature;
@@ -401,4 +406,28 @@ void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
     }
     
     SetFluidVoxel(id, fluidVoxel);
+}
+
+[numthreads(4, 4, 4)]
+void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
+{
+    if (IsOutOfFluidVolumeBounds(id))
+        return;
+        
+    FluidVoxel fluidVoxel = GetFluidVoxel(id);
+    Voxel outputVoxel;
+    
+    if (fluidVoxel.IsFluid() && fluidVoxel.density > 0.001f)
+    {
+        // Convert density to signed distance field
+        float sdfValue = fluidDensityThreshold - fluidVoxel.density;
+        outputVoxel = Voxel::Create(float4(sdfValue, fluidVoxel.voxel.GetGradient()), fluidVoxel.voxel.materialIndex);
+    }
+    else
+    {
+        // Use existing solid geometry or empty space
+        outputVoxel = fluidVoxel.voxel;
+    }
+    
+    outputVoxelVolume[CalculateFluidVolumeIndex(id)] = PackVoxel(outputVoxel);
 }

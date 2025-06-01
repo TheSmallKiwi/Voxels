@@ -23,7 +23,8 @@ struct FluidVoxel
 
     static FluidVoxel Create()
     {
-        return Create(Voxel::Create(), float3(0, 0, 0), 0, 0, 0);
+        Voxel voxel = Voxel::Create(float4(0, 0, 0, 1));
+        return Create(voxel, float3(0, 0, 0), 0, 0, 0);
     }
 
     static FluidVoxel Create(Voxel voxel, float3 velocity, float pressure, float temperature, float density)
@@ -44,7 +45,6 @@ struct PackedFluidVoxel
     uint packedVelocityXY;
     uint packedVelocityZPressure;
     uint packedTemperatureDensity;
-
 
     static PackedFluidVoxel Create(PackedVoxel voxel, uint packedVelocityXY, uint packedVelocityZPressure,
                                    uint packedTemperatureDensity)

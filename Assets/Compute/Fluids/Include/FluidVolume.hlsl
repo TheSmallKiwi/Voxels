@@ -89,6 +89,17 @@ FluidVoxel SampleFluidVoxelTrilinear(float3 position)
     
     // Trilinear interpolation
     FluidVoxel result;
+
+    result.voxel.materialIndex = v000.voxel.materialIndex;    
+
+    // Interpolate Value & Gradient
+    float4 v00 = lerp(v000.voxel.valueAndGradient, v100.voxel.valueAndGradient, frac.x);
+    float4 v10 = lerp(v010.voxel.valueAndGradient, v110.voxel.valueAndGradient, frac.x);
+    float4 v01 = lerp(v001.voxel.valueAndGradient, v101.voxel.valueAndGradient, frac.x);
+    float4 v11 = lerp(v011.voxel.valueAndGradient, v111.voxel.valueAndGradient, frac.x);
+    float4 v0 = lerp(v00, v10, frac.y);
+    float4 v1 = lerp(v01, v11, frac.y);
+    result.voxel.valueAndGradient = lerp(v0, v1, frac.z);
     
     // Interpolate density
     float d00 = lerp(v000.density, v100.density, frac.x);
@@ -109,13 +120,13 @@ FluidVoxel SampleFluidVoxelTrilinear(float3 position)
     result.velocity = lerp(vel0, vel1, frac.z);
     
     // Interpolate pressure
-    float p00 = lerp(v000.pressure, v100.pressure, frac.x);
-    float p10 = lerp(v010.pressure, v110.pressure, frac.x);
-    float p01 = lerp(v001.pressure, v101.pressure, frac.x);
-    float p11 = lerp(v011.pressure, v111.pressure, frac.x);
-    float p0 = lerp(p00, p10, frac.y);
-    float p1 = lerp(p01, p11, frac.y);
-    result.pressure = lerp(p0, p1, frac.z);
+    // float p00 = lerp(v000.pressure, v100.pressure, frac.x);
+    // float p10 = lerp(v010.pressure, v110.pressure, frac.x);
+    // float p01 = lerp(v001.pressure, v101.pressure, frac.x);
+    // float p11 = lerp(v011.pressure, v111.pressure, frac.x);
+    // float p0 = lerp(p00, p10, frac.y);
+    // float p1 = lerp(p01, p11, frac.y);
+    // result.pressure = lerp(p0, p1, frac.z);
 
     // Interpolate temperature
     float t00 = lerp(v000.temperature, v100.temperature, frac.x);
