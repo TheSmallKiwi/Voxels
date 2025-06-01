@@ -373,6 +373,7 @@ void AddFluidSource(uint3 id : SV_DispatchThreadID)
         // Make sure it's marked as fluid
         if (voxel.density > 0.001f)
         {
+            
             voxel.voxel.materialIndex = sourceMaterial;
         }
     }
@@ -419,15 +420,27 @@ void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
     
     if (fluidVoxel.IsFluid() && fluidVoxel.density > 0.001f)
     {
-        // Convert density to signed distance field
+        // Convert fluid density to signed distance field
+        // Positive values = inside fluid, negative = outside
         float sdfValue = fluidDensityThreshold - fluidVoxel.density;
-        outputVoxel = Voxel::Create(float4(sdfValue, fluidVoxel.voxel.GetGradient()), fluidVoxel.voxel.materialIndex);
+        
+        // Calculate gradient from fluid density field
+        float3 gradient = CalculateFluidDensityGradient(id, fluidVoxel.density);
+        
+        // Create voxel with SDF value and calculated gradient
+        outputVoxel = Voxel::Create(float4(sdfValue, gradient), fluidVoxel.voxel.materialIndex);
+    }
+    else if (fluidVoxel.IsSolid())
+    {
+        // Use existing solid geometry
+        outputVoxel = fluidVoxel.voxel;
     }
     else
     {
-        // Use existing solid geometry or empty space
-        outputVoxel = fluidVoxel.voxel;
+        // Empty space - large positive SDF value
+        outputVoxel = Voxel::Create(float4(1.0f, 0.0f, 0.0f, 0.0f), 0);
     }
     
-    outputVoxelVolume[CalculateFluidVolumeIndex(id)] = PackVoxel(outputVoxel);
+    uint index = CalculateFluidVolumeIndex(id);
+    outputVoxelVolume[index] = PackVoxel(outputVoxel);
 }

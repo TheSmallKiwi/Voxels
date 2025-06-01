@@ -11,11 +11,13 @@ namespace Tuntenfisch.Voxels.Materials.Editor
         private static bool m_materialFoldout = true;
 
         private SerializedProperty m_renderMaterial;
+        private SerializedProperty m_fluidRenderMaterial;
         private SerializedProperty m_materialInfos;
 
         private void OnEnable()
         {
             m_renderMaterial = serializedObject.FindProperty(nameof(m_renderMaterial));
+            m_fluidRenderMaterial = serializedObject.FindProperty(nameof(m_fluidRenderMaterial));
             m_materialInfos = serializedObject.FindProperty(nameof(m_materialInfos));
         }
 
@@ -26,6 +28,7 @@ namespace Tuntenfisch.Voxels.Materials.Editor
             DisplayScriptHeader();
 
             EditorGUILayout.PropertyField(m_renderMaterial);
+            EditorGUILayout.PropertyField(m_fluidRenderMaterial);
 
             if (m_materialFoldout = EditorGUILayout.BeginFoldoutHeaderGroup(m_materialFoldout, ObjectNames.NicifyVariableName(nameof(m_materialInfos))))
             {

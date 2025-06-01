@@ -61,6 +61,105 @@ float3 WorldToFluidVolumeSpace(float3 position)
     return position - fluidVolumeToWorldSpaceOffset;
 }
 
+float3 CalculateFluidDensityGradient(uint3 coordinate, float centerDensity)
+{
+    float3 gradient = float3(0, 0, 0);
+    
+    // Calculate gradient using central differences where possible
+    // X-gradient
+    if (coordinate.x > 0 && coordinate.x < numberOfVoxels.x - 1)
+    {
+        FluidVoxel voxelXMinus = GetFluidVoxel(coordinate - uint3(1, 0, 0));
+        FluidVoxel voxelXPlus = GetFluidVoxel(coordinate + uint3(1, 0, 0));
+        
+        float densityXMinus = voxelXMinus.IsFluid() ? voxelXMinus.density : 0.0f;
+        float densityXPlus = voxelXPlus.IsFluid() ? voxelXPlus.density : 0.0f;
+        
+        gradient.x = (densityXPlus - densityXMinus) / (2.0f * voxelSpacing);
+    }
+    else
+    {
+        // Use forward/backward difference at boundaries
+        if (coordinate.x == 0 && coordinate.x < numberOfVoxels.x - 1)
+        {
+            FluidVoxel voxelXPlus = GetFluidVoxel(coordinate + uint3(1, 0, 0));
+            float densityXPlus = voxelXPlus.IsFluid() ? voxelXPlus.density : 0.0f;
+            gradient.x = (densityXPlus - centerDensity) / voxelSpacing;
+        }
+        else if (coordinate.x == numberOfVoxels.x - 1 && coordinate.x > 0)
+        {
+            FluidVoxel voxelXMinus = GetFluidVoxel(coordinate - uint3(1, 0, 0));
+            float densityXMinus = voxelXMinus.IsFluid() ? voxelXMinus.density : 0.0f;
+            gradient.x = (centerDensity - densityXMinus) / voxelSpacing;
+        }
+    }
+    
+    // Y-gradient
+    if (coordinate.y > 0 && coordinate.y < numberOfVoxels.y - 1)
+    {
+        FluidVoxel voxelYMinus = GetFluidVoxel(coordinate - uint3(0, 1, 0));
+        FluidVoxel voxelYPlus = GetFluidVoxel(coordinate + uint3(0, 1, 0));
+        
+        float densityYMinus = voxelYMinus.IsFluid() ? voxelYMinus.density : 0.0f;
+        float densityYPlus = voxelYPlus.IsFluid() ? voxelYPlus.density : 0.0f;
+        
+        gradient.y = (densityYPlus - densityYMinus) / (2.0f * voxelSpacing);
+    }
+    else
+    {
+        // Use forward/backward difference at boundaries
+        if (coordinate.y == 0 && coordinate.y < numberOfVoxels.y - 1)
+        {
+            FluidVoxel voxelYPlus = GetFluidVoxel(coordinate + uint3(0, 1, 0));
+            float densityYPlus = voxelYPlus.IsFluid() ? voxelYPlus.density : 0.0f;
+            gradient.y = (densityYPlus - centerDensity) / voxelSpacing;
+        }
+        else if (coordinate.y == numberOfVoxels.y - 1 && coordinate.y > 0)
+        {
+            FluidVoxel voxelYMinus = GetFluidVoxel(coordinate - uint3(0, 1, 0));
+            float densityYMinus = voxelYMinus.IsFluid() ? voxelYMinus.density : 0.0f;
+            gradient.y = (centerDensity - densityYMinus) / voxelSpacing;
+        }
+    }
+    
+    // Z-gradient
+    if (coordinate.z > 0 && coordinate.z < numberOfVoxels.z - 1)
+    {
+        FluidVoxel voxelZMinus = GetFluidVoxel(coordinate - uint3(0, 0, 1));
+        FluidVoxel voxelZPlus = GetFluidVoxel(coordinate + uint3(0, 0, 1));
+        
+        float densityZMinus = voxelZMinus.IsFluid() ? voxelZMinus.density : 0.0f;
+        float densityZPlus = voxelZPlus.IsFluid() ? voxelZPlus.density : 0.0f;
+        
+        gradient.z = (densityZPlus - densityZMinus) / (2.0f * voxelSpacing);
+    }
+    else
+    {
+        // Use forward/backward difference at boundaries
+        if (coordinate.z == 0 && coordinate.z < numberOfVoxels.z - 1)
+        {
+            FluidVoxel voxelZPlus = GetFluidVoxel(coordinate + uint3(0, 0, 1));
+            float densityZPlus = voxelZPlus.IsFluid() ? voxelZPlus.density : 0.0f;
+            gradient.z = (densityZPlus - centerDensity) / voxelSpacing;
+        }
+        else if (coordinate.z == numberOfVoxels.z - 1 && coordinate.z > 0)
+        {
+            FluidVoxel voxelZMinus = GetFluidVoxel(coordinate - uint3(0, 0, 1));
+            float densityZMinus = voxelZMinus.IsFluid() ? voxelZMinus.density : 0.0f;
+            gradient.z = (centerDensity - densityZMinus) / voxelSpacing;
+        }
+    }
+    
+    // Normalize gradient for surface normal calculation
+    float gradientLength = length(gradient);
+    if (gradientLength > 0.001f)
+    {
+        gradient = gradient / gradientLength;
+    }
+    
+    return gradient;
+}
+
 // Helper for trilinear sampling of fluid properties
 FluidVoxel SampleFluidVoxelTrilinear(float3 position)
 {

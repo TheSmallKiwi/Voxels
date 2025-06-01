@@ -16,10 +16,13 @@ namespace Tuntenfisch.Voxels.Materials
         public event Action OnLateDirtied;
 
         public Material RenderMaterial => m_renderMaterial;
+        public Material FluidRenderMaterial => m_fluidRenderMaterial;
         public List<MaterialInfo> MaterialInfos => m_materialInfos;
 
         [SerializeField]
         private Material m_renderMaterial;
+        [SerializeField] 
+        private Material m_fluidRenderMaterial;
         [SerializeField]
         private List<MaterialInfo> m_materialInfos;
 
