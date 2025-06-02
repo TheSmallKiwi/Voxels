@@ -210,6 +210,8 @@ namespace Tuntenfisch.Fluids
             compute.SetFloat("viscosity", m_voxelConfig.FluidSimulationConfig.Viscosity);
             compute.SetVector("gravity", m_voxelConfig.FluidSimulationConfig.Gravity);
             compute.SetFloat("fluidDensityThreshold", m_voxelConfig.FluidSimulationConfig.FluidDensityThreshold);
+            compute.SetFloat("minFluidDensity", m_voxelConfig.FluidSimulationConfig.MinFluidDensity);
+            compute.SetFloat("dampingFactor", m_voxelConfig.FluidSimulationConfig.DampingFactor);
 
             // Set voxel volume parameters
             var volumeConfig = m_voxelConfig.VoxelVolumeConfig;

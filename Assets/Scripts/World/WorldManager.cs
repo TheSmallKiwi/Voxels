@@ -1,6 +1,4 @@
-﻿// Updated sections of WorldManager.cs for FluidSimulation integration
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Tuntenfisch.Fluids;
 using Tuntenfisch.Generics;
