@@ -251,6 +251,17 @@ namespace Tuntenfisch.Fluids
         {
             (FluidVolumeBuffer, FluidVolumeBackBuffer) = (FluidVolumeBackBuffer, FluidVolumeBuffer);
         }
+        
+        public void DebugOutput()
+        {
+            Debug.Log($"World Position: {WorldPosition}");
+            Debug.Log($"Fluid Volume Buffer: {FluidVolumeBuffer.count}");
+            Debug.Log($"Fluid Volume Back Buffer: {FluidVolumeBackBuffer.count}");
+            Debug.Log($"Voxel Volume Buffer: {VoxelVolumeBuffer.count}");
+            Debug.Log($"Temp Voxel Volume Buffer: {TempVoxelVolumeBuffer.count}");
+            Debug.Log($"Has Fluid Source: {HasFluidSource}");
+            Debug.Log($"Fluid Source: {FluidSource}");
+        }
     }
 
     [System.Serializable]

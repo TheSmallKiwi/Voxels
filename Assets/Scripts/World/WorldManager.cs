@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Updated sections of WorldManager.cs for FluidSimulation integration
+
+using System;
 using System.Collections.Generic;
 using Tuntenfisch.Fluids;
 using Tuntenfisch.Generics;
@@ -196,13 +198,6 @@ namespace Tuntenfisch.World
                 Debug.Log($"Removed fluid source from chunk {chunkCoordinate}");
             }
         }
-        
-        [ContextMenu("Add Test Fluid Source")]
-        public void AddTestFluidSource()
-        {
-            var viewerPos = m_viewer.position;
-            AddFluidSource(viewerPos + Vector3.forward * 10f, Vector3.up * 2f, 3f, 10f);
-        }
 
         // Add fluid source to a specific chunk by coordinate
         public void AddFluidSourceToChunk(int3 chunkCoordinate, float3 localPosition, float3 velocity, float radius,
@@ -226,15 +221,6 @@ namespace Tuntenfisch.World
             else
             {
                 Debug.LogWarning($"Cannot add fluid source: chunk {chunkCoordinate} not found or not active");
-            }
-        }
-
-        // Regenerate fluid meshes for all active chunks (useful for debugging)
-        public void RegenerateAllFluidMeshes()
-        {
-            foreach (var chunk in m_chunks.Values)
-            {
-                chunk.RegenerateFluidMesh();
             }
         }
 
@@ -456,6 +442,52 @@ namespace Tuntenfisch.World
             }
 
             return null;
+        }
+        
+        public void AddTestFluidSource()
+        {
+            var viewerPos = m_viewer.position;
+            AddFluidSource(viewerPos + Vector3.forward * 10f, Vector3.up * 2f, 3f, 1f);
+        }
+
+        public void RemoveAllFluidSources()
+        {
+            foreach (var chunk in m_chunks.Values)
+            {
+                chunk.RemoveFluidSource();
+            }
+        }
+
+        public void DebugChunkFluidStates()
+        {
+            foreach (var chunk in m_chunks.Values)
+            {
+                chunk.FluidData.DebugOutput();
+            }
+        }
+
+        // Public method for editor to force regenerate all fluid meshes
+        public void ForceRegenerateAllFluidMeshes()
+        {
+            if (!m_enableFluidSimulation)
+            {
+                Debug.LogWarning("Fluid simulation is disabled");
+                return;
+            }
+
+            int fluidChunkCount = 0;
+            foreach (var chunk in m_chunks.Values)
+            {
+                if (chunk.HasActiveFluid())
+                {
+                    fluidChunkCount++;
+                }
+
+                chunk.RegenerateFluidMesh();
+            }
+
+            Debug.Log(
+                $"Force regenerated fluid meshes for {m_chunks.Count} chunks ({fluidChunkCount} have active fluid)");
         }
     }
 }
