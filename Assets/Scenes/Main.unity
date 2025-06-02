@@ -175,7 +175,7 @@ MonoBehaviour:
   m_lodDistances:
   - 200
   - 400
-  - 450
+  - 800
   m_enableFluidSimulation: 1
 --- !u!114 &337836006
 MonoBehaviour:
