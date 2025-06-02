@@ -51,6 +51,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "Tertiary",
+                    "type": "Button",
+                    "id": "5985752a-f168-48b9-9be6-86f1f926d7a8",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "Press(behavior=2)",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "VerticalMove",
                     "type": "Value",
                     "id": "38d9e2fb-541a-4af4-8e5d-a111e0d57fc6",
@@ -221,6 +230,17 @@
                     "processors": "",
                     "groups": "Keyboard and Mouse",
                     "action": "Secondary",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "652e3888-847a-49a3-9a91-a6f33214430c",
+                    "path": "<Mouse>/middleButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard and Mouse",
+                    "action": "Tertiary",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

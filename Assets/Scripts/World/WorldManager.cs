@@ -16,15 +16,10 @@ namespace Tuntenfisch.World
 {
     /// <summary>
     /// Manages voxel-related components and operations in the world, serving as a high-level interface for voxel manipulation and rendering.
-    /// Now includes fluid simulation integration and coordination between solid and fluid systems.
+    /// Now includes fluid simulation integration through a centralized FluidSimulation manager.
     /// </summary>
-    /// <remarks>
-    /// This class is implemented as a singleton. It provides access to primary voxel system components
-    /// including <see cref="VoxelConfig"/>, <see cref="VoxelVolume"/>, <see cref="DualContouring"/>, and <see cref="FluidSimulation"/>.
-    /// Additionally, it facilitates operations such as rendering, editing, and interacting with voxel-based objects using Constructive Solid Geometry (CSG) techniques.
-    /// </remarks>
     [RequireComponent(typeof(VoxelConfig), typeof(VoxelVolume), typeof(DualContouring))]
-    [RequireComponent(typeof(CSGUtility))]
+    [RequireComponent(typeof(CSGUtility), typeof(FluidSimulation))]
     public class WorldManager : SingletonComponent<WorldManager>
     {
         public static VoxelConfig VoxelConfig => Instance.m_voxelConfig;
@@ -34,23 +29,16 @@ namespace Tuntenfisch.World
 
         private float ViewDistanceSquared => m_lodDistancesSquared[m_lodDistancesSquared.Length - 1];
 
-        [Header("World Settings")]
-        [SerializeField]
+        [Header("World Settings")] [SerializeField]
         private Transform m_viewer;
-        [SerializeField]
-        private float m_updateInterval = 20.0f;
-        [SerializeField]
-        private GameObject m_chunkPrefab;
-        [SerializeField]
-        private int m_initialChunkPoolPopulation = 0;
-        [SerializeField]
-        private float[] m_lodDistances;
 
-        [Header("Fluid Settings")]
-        [SerializeField]
+        [SerializeField] private float m_updateInterval = 20.0f;
+        [SerializeField] private GameObject m_chunkPrefab;
+        [SerializeField] private int m_initialChunkPoolPopulation = 0;
+        [SerializeField] private float[] m_lodDistances;
+
+        [Header("Fluid Settings")] [SerializeField]
         private bool m_enableFluidSimulation = true;
-        [SerializeField]
-        private float m_fluidUpdateInterval = 10.0f; // Smaller interval for more frequent fluid updates
 
         private VoxelConfig m_voxelConfig;
         private VoxelVolume m_voxelVolume;
@@ -67,9 +55,7 @@ namespace Tuntenfisch.World
 
         // We don't want to update the world every frame.
         private float3 m_lastViewerPosition;
-        private float3 m_lastFluidUpdatePosition;
         private float m_updateIntervalSquared;
-        private float m_fluidUpdateIntervalSquared;
         private float[] m_lodDistancesSquared;
 
         private void Start()
@@ -84,16 +70,18 @@ namespace Tuntenfisch.World
             m_voxelVolume = GetComponent<VoxelVolume>();
             m_dualContouring = GetComponent<DualContouring>();
             m_csgUtility = GetComponent<CSGUtility>();
-            
-            // FluidSimulation is optional
+
+            // FluidSimulation is now required
             m_fluidSimulation = GetComponent<FluidSimulation>();
             if (m_fluidSimulation == null && m_enableFluidSimulation)
             {
-                Debug.LogWarning("FluidSimulation component not found. Fluid simulation will be disabled.");
+                Debug.LogError("FluidSimulation component is required but not found!");
                 m_enableFluidSimulation = false;
             }
 
-            m_chunkPool = new ObjectPool<Chunk>(() => { return Instantiate(m_chunkPrefab, transform).GetComponent<Chunk>(); }, m_initialChunkPoolPopulation);
+            m_chunkPool =
+                new ObjectPool<Chunk>(() => { return Instantiate(m_chunkPrefab, transform).GetComponent<Chunk>(); },
+                    m_initialChunkPoolPopulation);
             m_chunks = new Dictionary<int3, Chunk>();
             m_chunksOutsideOfViewDistance = new List<int3>();
             m_chunksToProcess = new Queue<(int3, float3, int)>();
@@ -101,11 +89,9 @@ namespace Tuntenfisch.World
             m_chunkDimensions = CalculateChunkDimensions();
 
             m_lastViewerPosition = m_viewer.position;
-            m_lastFluidUpdatePosition = m_viewer.position;
             m_updateIntervalSquared = math.pow(m_updateInterval, 2.0f);
-            m_fluidUpdateIntervalSquared = math.pow(m_fluidUpdateInterval, 2.0f);
             m_lodDistancesSquared = CalculateLodDistancesSquared();
-            
+
             m_chunkModifications = new Dictionary<int3, List<GPUVoxelVolumeCSGOperation>>();
 
             UpdateWorld(m_viewer.position);
@@ -114,20 +100,12 @@ namespace Tuntenfisch.World
         private void Update()
         {
             float3 currentViewerPosition = m_viewer.position;
-            
-            // Update world geometry (terrain, structures) less frequently
+
+            // Update world geometry
             if (math.lengthsq(currentViewerPosition - m_lastViewerPosition) >= m_updateIntervalSquared)
             {
                 m_lastViewerPosition = currentViewerPosition;
                 UpdateWorld(currentViewerPosition);
-            }
-            
-            // Update fluid simulation more frequently for responsiveness
-            if (m_enableFluidSimulation && 
-                math.lengthsq(currentViewerPosition - m_lastFluidUpdatePosition) >= m_fluidUpdateIntervalSquared)
-            {
-                m_lastFluidUpdatePosition = currentViewerPosition;
-                UpdateFluidSimulation(currentViewerPosition);
             }
         }
 
@@ -145,7 +123,8 @@ namespace Tuntenfisch.World
             m_csgUtility.DrawCSGPrimitiveHologram(primitiveType, Matrix4x4.TRS(position, quaternion.identity, scale));
         }
 
-        public void ApplyCSGOperation(GPUCSGOperator csgOperator, GPUCSGPrimitive csgPrimitive, MaterialIndex materialIndex, float3 position, float3 scale)
+        public void ApplyCSGOperation(GPUCSGOperator csgOperator, GPUCSGPrimitive csgPrimitive,
+            MaterialIndex materialIndex, float3 position, float3 scale)
         {
             const float scaleInflationFactor = 1.5f;
 
@@ -155,28 +134,33 @@ namespace Tuntenfisch.World
             int3 minChunkCoordinate = CalculateChunkCoordinate(position - 0.5f * scaleInflationFactor * scale);
             int3 maxChunkCoordinate = CalculateChunkCoordinate(position + 0.5f * scaleInflationFactor * scale);
 
-            for (int3 chunkCoordinate = minChunkCoordinate; chunkCoordinate.z <= maxChunkCoordinate.z; chunkCoordinate.z++)
+            for (int3 chunkCoordinate = minChunkCoordinate;
+                 chunkCoordinate.z <= maxChunkCoordinate.z;
+                 chunkCoordinate.z++)
             {
-                for (chunkCoordinate.y = minChunkCoordinate.y; chunkCoordinate.y <= maxChunkCoordinate.y; chunkCoordinate.y++)
+                for (chunkCoordinate.y = minChunkCoordinate.y;
+                     chunkCoordinate.y <= maxChunkCoordinate.y;
+                     chunkCoordinate.y++)
                 {
-                    for (chunkCoordinate.x = minChunkCoordinate.x; chunkCoordinate.x <= maxChunkCoordinate.x; chunkCoordinate.x++)
+                    for (chunkCoordinate.x = minChunkCoordinate.x;
+                         chunkCoordinate.x <= maxChunkCoordinate.x;
+                         chunkCoordinate.x++)
                     {
                         if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
                         {
-                            chunk.ApplyCSGPrimitiveOperation(csgOperator, csgPrimitive, materialIndex, worldToObjectMatrix);
-                            
-                            // If fluid simulation is enabled, update fluid boundaries for this chunk
-                            if (m_enableFluidSimulation && m_fluidSimulation != null)
-                            {
-                                UpdateChunkFluidBoundaries(chunk);
-                            }
+                            chunk.ApplyCSGPrimitiveOperation(csgOperator, csgPrimitive, materialIndex,
+                                worldToObjectMatrix);
+
+                            // The chunk will handle its own fluid boundary updates through its Update() method
                         }
                     }
                 }
             }
         }
 
-        public void AddFluidSource(float3 position, float3 velocity, float radius, float amount, MaterialIndex fluidMaterial = MaterialIndex.Water)
+        // Add fluid source to the chunk containing the specified world position
+        public void AddFluidSource(float3 worldPosition, float3 velocity, float radius, float amount,
+            MaterialIndex fluidMaterial = MaterialIndex.Water)
         {
             if (!m_enableFluidSimulation || m_fluidSimulation == null)
             {
@@ -184,15 +168,80 @@ namespace Tuntenfisch.World
                 return;
             }
 
-            m_fluidSimulation.SetFluidSource(position, velocity, radius, amount);
+            int3 chunkCoordinate = CalculateChunkCoordinate(worldPosition);
+
+            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
+            {
+                chunk.AddFluidSource(worldPosition, velocity, radius, amount, fluidMaterial);
+                Debug.Log($"Added fluid source to chunk {chunkCoordinate} at world position {worldPosition}");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"Cannot add fluid source: no chunk found at world position {worldPosition} (chunk coordinate: {chunkCoordinate})");
+            }
         }
 
-        public void RemoveFluidSource()
+        // Remove fluid source from the chunk containing the specified world position
+        public void RemoveFluidSource(float3 worldPosition)
         {
             if (!m_enableFluidSimulation || m_fluidSimulation == null)
                 return;
 
-            m_fluidSimulation.DisableFluidSource();
+            int3 chunkCoordinate = CalculateChunkCoordinate(worldPosition);
+
+            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
+            {
+                chunk.RemoveFluidSource();
+                Debug.Log($"Removed fluid source from chunk {chunkCoordinate}");
+            }
+        }
+        
+        [ContextMenu("Add Test Fluid Source")]
+        public void AddTestFluidSource()
+        {
+            var viewerPos = m_viewer.position;
+            AddFluidSource(viewerPos + Vector3.forward * 10f, Vector3.up * 2f, 3f, 10f);
+        }
+
+        // Add fluid source to a specific chunk by coordinate
+        public void AddFluidSourceToChunk(int3 chunkCoordinate, float3 localPosition, float3 velocity, float radius,
+            float amount, MaterialIndex fluidMaterial = MaterialIndex.Water)
+        {
+            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+            {
+                Debug.LogWarning("Fluid simulation is not available. Cannot add fluid source.");
+                return;
+            }
+
+            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
+            {
+                // Convert local position to world position
+                float3 chunkWorldPosition = chunkCoordinate * m_chunkDimensions;
+                float3 worldPosition = chunkWorldPosition + localPosition;
+
+                chunk.AddFluidSource(worldPosition, velocity, radius, amount, fluidMaterial);
+                Debug.Log($"Added fluid source to chunk {chunkCoordinate} at local position {localPosition}");
+            }
+            else
+            {
+                Debug.LogWarning($"Cannot add fluid source: chunk {chunkCoordinate} not found or not active");
+            }
+        }
+
+        // Regenerate fluid meshes for all active chunks (useful for debugging)
+        public void RegenerateAllFluidMeshes()
+        {
+            foreach (var chunk in m_chunks.Values)
+            {
+                chunk.RegenerateFluidMesh();
+            }
+        }
+
+        // Get active chunks for debugging
+        public Dictionary<int3, Chunk> GetActiveChunks()
+        {
+            return new Dictionary<int3, Chunk>(m_chunks);
         }
 
         public bool GetMaterialFromRaycastHit(RaycastHit hit, out MaterialIndex materialIndex)
@@ -206,7 +255,8 @@ namespace Tuntenfisch.World
 
             int3 chunkCoordinate = CalculateChunkCoordinate(hit.point);
 
-            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk) && chunk.GetMaterialFromRaycastHit(hit, out materialIndex))
+            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk) &&
+                chunk.GetMaterialFromRaycastHit(hit, out materialIndex))
             {
                 return true;
             }
@@ -220,59 +270,12 @@ namespace Tuntenfisch.World
             CreateChunksWithinViewDistance(viewerPosition);
         }
 
-        private void UpdateFluidSimulation(float3 viewerPosition)
-        {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null)
-                return;
-
-            // Update fluid simulation for all active chunks
-            foreach (var chunk in m_chunks.Values)
-            {
-                UpdateChunkFluidSimulation(chunk);
-            }
-        }
-
-        private void UpdateChunkFluidSimulation(Chunk chunk)
-        {
-            if (chunk == null || !chunk.gameObject.activeInHierarchy)
-                return;
-
-            // Update fluid boundaries from solid voxel volume
-            UpdateChunkFluidBoundaries(chunk);
-
-            // Generate fluid mesh if needed
-            RegenerateChunkFluidMesh(chunk);
-        }
-
-        private void UpdateChunkFluidBoundaries(Chunk chunk)
-        {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null)
-                return;
-
-            // Update fluid simulation boundaries using the chunk's solid voxel volume
-            m_fluidSimulation.UpdateBoundariesFromVoxelVolume(
-                chunk.VoxelVolumeBuffer, 
-                chunk.transform.position
-            );
-        }
-
-        private void RegenerateChunkFluidMesh(Chunk chunk)
-        {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null)
-                return;
-
-            // Convert fluid volume to voxel volume for mesh generation
-            m_fluidSimulation.ConvertFluidToVoxelVolume(chunk.transform.position);
-
-            // Generate fluid mesh using the converted voxel volume
-            chunk.RegenerateFluidMesh(m_fluidSimulation.TempVoxelVolumeBuffer);
-        }
-
         private void DestroyChunksOutsideViewDistance(float3 viewerPosition)
         {
             foreach (KeyValuePair<int3, Chunk> pair in m_chunks)
             {
-                float viewerToChunkDistanceSquared = math.lengthsq((float3)pair.Value.transform.position - viewerPosition);
+                float viewerToChunkDistanceSquared =
+                    math.lengthsq((float3)pair.Value.transform.position - viewerPosition);
 
                 if (viewerToChunkDistanceSquared > ViewDistanceSquared)
                 {
@@ -285,6 +288,7 @@ namespace Tuntenfisch.World
                 m_chunkPool.Release(m_chunks[chunkCoordinate]);
                 m_chunks.Remove(chunkCoordinate);
             }
+
             m_chunksOutsideOfViewDistance.Clear();
         }
 
@@ -319,11 +323,7 @@ namespace Tuntenfisch.World
                     chunk.ApplyStoredModifications(chunkCoordinate);
                     m_chunks[chunkCoordinate] = chunk;
 
-                    // If fluid simulation is enabled, initialize fluid boundaries for new chunk
-                    if (m_enableFluidSimulation && m_fluidSimulation != null)
-                    {
-                        UpdateChunkFluidBoundaries(chunk);
-                    }
+                    // Fluid buffers are automatically created in chunk.OnAcquire()
                 }
 
                 EnqueueChunk(chunkCoordinate + new int3(1, 0, 0), viewerPosition);
@@ -342,9 +342,11 @@ namespace Tuntenfisch.World
 
                 if (viewerToNeighbourChunkDistanceSquared <= ViewDistanceSquared)
                 {
-                    m_chunksToProcess.Enqueue((neighbourChunkCoordinate, neighbourChunkPosition, CalculateChunkLod(viewerToNeighbourChunkDistanceSquared)));
+                    m_chunksToProcess.Enqueue((neighbourChunkCoordinate, neighbourChunkPosition,
+                        CalculateChunkLod(viewerToNeighbourChunkDistanceSquared)));
                 }
             }
+
             m_processedChunkCoordinates.Add(neighbourChunkCoordinate);
         }
 
@@ -352,12 +354,14 @@ namespace Tuntenfisch.World
         {
             const int voxelOverlap = 1;
 
-            float inflationFactor = 1.0f + (float)voxelOverlap / (VoxelConfig.VoxelVolumeConfig.NumberOfCellsAlongAxis - voxelOverlap);
+            float inflationFactor = 1.0f + (float)voxelOverlap /
+                (VoxelConfig.VoxelVolumeConfig.NumberOfCellsAlongAxis - voxelOverlap);
 
             return VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions / inflationFactor;
         }
 
-        private int3 CalculateChunkCoordinate(float3 position) => new int3((int)math.round(position.x / m_chunkDimensions.x), 0, (int)math.round(position.z / m_chunkDimensions.z));
+        private int3 CalculateChunkCoordinate(float3 position) => new int3(
+            (int)math.round(position.x / m_chunkDimensions.x), 0, (int)math.round(position.z / m_chunkDimensions.z));
 
         private float[] CalculateLodDistancesSquared()
         {
@@ -396,7 +400,6 @@ namespace Tuntenfisch.World
             }
 
             m_updateIntervalSquared = math.pow(m_updateInterval, 2.0f);
-            m_fluidUpdateIntervalSquared = math.pow(m_fluidUpdateInterval, 2.0f);
             m_lodDistancesSquared = CalculateLodDistancesSquared();
             m_chunkDimensions = CalculateChunkDimensions();
 
@@ -404,6 +407,7 @@ namespace Tuntenfisch.World
             {
                 m_chunkPool.Release(chunk);
             }
+
             m_chunks.Clear();
 
             UpdateWorld(m_viewer.position);
@@ -425,15 +429,10 @@ namespace Tuntenfisch.World
             {
                 chunk.RegenerateVoxelVolume();
                 chunk.RegenerateMesh();
-                
-                // Update fluid boundaries when terrain changes
-                if (m_enableFluidSimulation && m_fluidSimulation != null)
-                {
-                    UpdateChunkFluidBoundaries(chunk);
-                }
             }
         }
 
+        // Chunk modification tracking (existing methods)
         public bool ChunkHasModifications(int3 chunkCoordinate)
         {
             return m_chunkModifications.ContainsKey(chunkCoordinate);
@@ -448,13 +447,14 @@ namespace Tuntenfisch.World
         {
             m_chunkModifications[chunkCoordinate].Add(operation);
         }
-        
+
         public List<GPUVoxelVolumeCSGOperation> GetChunkModifications(int3 chunkCoordinate)
         {
             if (m_chunkModifications.TryGetValue(chunkCoordinate, out var modifications))
             {
                 return modifications;
             }
+
             return null;
         }
     }

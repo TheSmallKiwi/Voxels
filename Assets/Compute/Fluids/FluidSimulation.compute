@@ -6,6 +6,7 @@
 #pragma kernel AddFluidSource
 #pragma kernel UpdateBoundariesFromSolids
 #pragma kernel ConvertFluidToVoxelVolume
+#pragma kernel InitializeFluidVolume
 
 #include "Assets/Compute/Fluids/Include/FluidVolume.hlsl"
 
@@ -28,6 +29,75 @@ float sourceAmount;
 float sourceRadius;
 
 [numthreads(4, 4, 4)]
+void InitializeFluidVolume(uint3 id : SV_DispatchThreadID)
+{
+    if (IsOutOfFluidVolumeBounds(id))
+        return;
+        
+    // Initialize with empty fluid voxel
+    FluidVoxel voxel = FluidVoxel::Create();
+    voxel.voxel = Voxel::Create(float4(1.0f, 0, 0, 0), 0); // Empty space (positive SDF)
+    voxel.velocity = float3(0, 0, 0);
+    voxel.pressure = 0.0f;
+    voxel.temperature = 0.0f;
+    voxel.density = 0.0f;
+    
+    SetFluidVoxel(id, voxel);
+    SetFluidVoxelBackBuffer(id, voxel);
+}
+
+[numthreads(4, 4, 4)]
+void AddFluidSource(uint3 id : SV_DispatchThreadID)
+{
+    if (IsOutOfFluidVolumeBounds(id))
+        return;
+        
+    FluidVoxel voxel = GetFluidVoxel(id);
+    
+    // Skip if this is a solid boundary
+    if (voxel.IsSolid())
+        return;
+    
+    // Calculate distance from source position
+    float3 voxelWorldPos = FluidVolumeToWorldSpace(FluidVoxelToVolumeSpace(id));
+    float distance = length(voxelWorldPos - sourcePosition);
+    
+    // Add fluid within source radius
+    if (distance < sourceRadius)
+    {
+        float falloff = 1.0f - (distance / sourceRadius);
+        falloff = smoothstep(0, 1, falloff);
+        
+        // Add density
+        float densityIncrease = sourceAmount * falloff * deltaTime;
+        voxel.density = min(voxel.density + densityIncrease, 1.0f); // Clamp to max density
+        
+        // Set velocity towards source velocity
+        if (voxel.density > 0.001f)
+        {
+            float velocityBlend = falloff * deltaTime * 5.0f; // Faster velocity blending
+            voxel.velocity = lerp(voxel.velocity, sourceVelocity, min(velocityBlend, 1.0f));
+            
+            // Mark as fluid material
+            voxel.voxel.materialIndex = sourceMaterial;
+            
+            // Update SDF to be negative (inside fluid)
+            voxel.voxel.valueAndGradient.x = -voxel.density;
+        }
+        
+        // Debug: Force a minimum density in source area for testing
+        if (distance < sourceRadius * 0.5f)
+        {
+            voxel.density = max(voxel.density, 0.1f);
+            voxel.voxel.valueAndGradient.x = -0.5f; // Strong negative SDF
+            voxel.voxel.materialIndex = sourceMaterial;
+        }
+    }
+    
+    SetFluidVoxel(id, voxel);
+}
+
+[numthreads(4, 4, 4)]
 void Advection(uint3 id : SV_DispatchThreadID)
 {
     if (IsOutOfFluidVolumeBounds(id))
@@ -36,7 +106,7 @@ void Advection(uint3 id : SV_DispatchThreadID)
     FluidVoxel voxel = GetFluidVoxel(id);
     
     // Skip empty or solid voxels
-    if (!voxel.IsFluid())
+    if (!voxel.IsFluid() || voxel.density < 0.001f)
     {
         SetFluidVoxelBackBuffer(id, voxel);
         return;
@@ -63,6 +133,13 @@ void Advection(uint3 id : SV_DispatchThreadID)
     float dissipation = 0.99f;
     newVoxel.density *= dissipation;
     
+    // Ensure fluid properties are maintained
+    if (newVoxel.density > 0.001f)
+    {
+        newVoxel.voxel.valueAndGradient.x = -newVoxel.density;
+        newVoxel.voxel.materialIndex = sourceMaterial;
+    }
+    
     SetFluidVoxelBackBuffer(id, newVoxel);
 }
 
@@ -75,7 +152,7 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     FluidVoxel voxel = GetFluidVoxelBackBuffer(id);
     
     // Only apply forces to fluid voxels
-    if (voxel.IsFluid())
+    if (voxel.IsFluid() && voxel.density > 0.001f)
     {
         // Apply gravity
         voxel.velocity += gravity * deltaTime;
@@ -83,10 +160,8 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
         // Apply viscosity (simplified - full implementation would use Laplacian)
         voxel.velocity *= (1.0f - viscosity * deltaTime);
         
-        // Could add other forces here:
-        // - Buoyancy based on temperature
-        // - Surface tension at fluid boundaries
-        // - User-defined force fields
+        // Maintain fluid SDF
+        voxel.voxel.valueAndGradient.x = -voxel.density;
     }
     
     SetFluidVoxel(id, voxel);
@@ -102,7 +177,7 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
     FluidVoxel voxel = GetFluidVoxel(id);
     
     // Skip non-fluid voxels
-    if (!voxel.IsFluid())
+    if (!voxel.IsFluid() || voxel.density < 0.001f)
     {
         divergenceBuffer[index] = 0.0f;
         return;
@@ -117,8 +192,8 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
         FluidVoxel voxelXMinus = GetFluidVoxel(id - uint3(1, 0, 0));
         FluidVoxel voxelXPlus = GetFluidVoxel(id + uint3(1, 0, 0));
         
-        float velXMinus = voxelXMinus.IsFluid() ? voxelXMinus.velocity.x : 0.0f;
-        float velXPlus = voxelXPlus.IsFluid() ? voxelXPlus.velocity.x : 0.0f;
+        float velXMinus = (voxelXMinus.IsFluid() && voxelXMinus.density > 0.001f) ? voxelXMinus.velocity.x : 0.0f;
+        float velXPlus = (voxelXPlus.IsFluid() && voxelXPlus.density > 0.001f) ? voxelXPlus.velocity.x : 0.0f;
         
         divergence += (velXPlus - velXMinus) / (2.0f * voxelSpacing);
     }
@@ -129,8 +204,8 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
         FluidVoxel voxelYMinus = GetFluidVoxel(id - uint3(0, 1, 0));
         FluidVoxel voxelYPlus = GetFluidVoxel(id + uint3(0, 1, 0));
         
-        float velYMinus = voxelYMinus.IsFluid() ? voxelYMinus.velocity.y : 0.0f;
-        float velYPlus = voxelYPlus.IsFluid() ? voxelYPlus.velocity.y : 0.0f;
+        float velYMinus = (voxelYMinus.IsFluid() && voxelYMinus.density > 0.001f) ? voxelYMinus.velocity.y : 0.0f;
+        float velYPlus = (voxelYPlus.IsFluid() && voxelYPlus.density > 0.001f) ? voxelYPlus.velocity.y : 0.0f;
         
         divergence += (velYPlus - velYMinus) / (2.0f * voxelSpacing);
     }
@@ -141,8 +216,8 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
         FluidVoxel voxelZMinus = GetFluidVoxel(id - uint3(0, 0, 1));
         FluidVoxel voxelZPlus = GetFluidVoxel(id + uint3(0, 0, 1));
         
-        float velZMinus = voxelZMinus.IsFluid() ? voxelZMinus.velocity.z : 0.0f;
-        float velZPlus = voxelZPlus.IsFluid() ? voxelZPlus.velocity.z : 0.0f;
+        float velZMinus = (voxelZMinus.IsFluid() && voxelZMinus.density > 0.001f) ? voxelZMinus.velocity.z : 0.0f;
+        float velZPlus = (voxelZPlus.IsFluid() && voxelZPlus.density > 0.001f) ? voxelZPlus.velocity.z : 0.0f;
         
         divergence += (velZPlus - velZMinus) / (2.0f * voxelSpacing);
     }
@@ -160,7 +235,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     FluidVoxel voxel = GetFluidVoxel(id);
     
     // Skip non-fluid voxels
-    if (!voxel.IsFluid())
+    if (!voxel.IsFluid() || voxel.density < 0.001f)
     {
         voxel.pressure = 0.0f;
         SetFluidVoxelBackBuffer(id, voxel);
@@ -180,44 +255,17 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     
     for (int i = 0; i < 6; i++)
     {
-        if (i < 2) // X-axis neighbors
+        uint3 neighborCoord = id + int3(offsets[i]);
+        
+        // Check bounds
+        if (any(neighborCoord >= numberOfVoxels))
+            continue;
+            
+        FluidVoxel neighbor = GetFluidVoxel(neighborCoord);
+        if (neighbor.IsFluid() && neighbor.density > 0.001f)
         {
-            if ((i == 0 && id.x > 0) || (i == 1 && id.x < numberOfVoxels.x - 1))
-            {
-                uint3 neighborCoord = (i == 0) ? id - uint3(1, 0, 0) : id + uint3(1, 0, 0);
-                FluidVoxel neighbor = GetFluidVoxel(neighborCoord);
-                if (neighbor.IsFluid())
-                {
-                    pressureSum += neighbor.pressure;
-                    neighborCount++;
-                }
-            }
-        }
-        else if (i < 4) // Y-axis neighbors
-        {
-            if ((i == 2 && id.y > 0) || (i == 3 && id.y < numberOfVoxels.y - 1))
-            {
-                uint3 neighborCoord = (i == 2) ? id - uint3(0, 1, 0) : id + uint3(0, 1, 0);
-                FluidVoxel neighbor = GetFluidVoxel(neighborCoord);
-                if (neighbor.IsFluid())
-                {
-                    pressureSum += neighbor.pressure;
-                    neighborCount++;
-                }
-            }
-        }
-        else // Z-axis neighbors
-        {
-            if ((i == 4 && id.z > 0) || (i == 5 && id.z < numberOfVoxels.z - 1))
-            {
-                uint3 neighborCoord = (i == 4) ? id - uint3(0, 0, 1) : id + uint3(0, 0, 1);
-                FluidVoxel neighbor = GetFluidVoxel(neighborCoord);
-                if (neighbor.IsFluid())
-                {
-                    pressureSum += neighbor.pressure;
-                    neighborCount++;
-                }
-            }
+            pressureSum += neighbor.pressure;
+            neighborCount++;
         }
     }
     
@@ -231,44 +279,43 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     // Update velocity based on pressure gradient
     float3 pressureGradient = float3(0, 0, 0);
     
-    // X-gradient
-    if (id.x > 0 && id.x < numberOfVoxels.x - 1)
+    // Calculate pressure gradient
+    for (int i = 0; i < 6; i++)
     {
-        FluidVoxel voxelXMinus = GetFluidVoxel(id - uint3(1, 0, 0));
-        FluidVoxel voxelXPlus = GetFluidVoxel(id + uint3(1, 0, 0));
+        uint3 neighborCoord = id + int3(offsets[i]);
         
-        float pMinus = voxelXMinus.IsFluid() ? voxelXMinus.pressure : voxel.pressure;
-        float pPlus = voxelXPlus.IsFluid() ? voxelXPlus.pressure : voxel.pressure;
+        if (any(neighborCoord >= numberOfVoxels))
+            continue;
+            
+        FluidVoxel neighbor = GetFluidVoxel(neighborCoord);
+        float neighborPressure = (neighbor.IsFluid() && neighbor.density > 0.001f) ? neighbor.pressure : voxel.pressure;
         
-        pressureGradient.x = (pPlus - pMinus) / (2.0f * voxelSpacing);
-    }
-    
-    // Y-gradient
-    if (id.y > 0 && id.y < numberOfVoxels.y - 1)
-    {
-        FluidVoxel voxelYMinus = GetFluidVoxel(id - uint3(0, 1, 0));
-        FluidVoxel voxelYPlus = GetFluidVoxel(id + uint3(0, 1, 0));
-        
-        float pMinus = voxelYMinus.IsFluid() ? voxelYMinus.pressure : voxel.pressure;
-        float pPlus = voxelYPlus.IsFluid() ? voxelYPlus.pressure : voxel.pressure;
-        
-        pressureGradient.y = (pPlus - pMinus) / (2.0f * voxelSpacing);
-    }
-    
-    // Z-gradient
-    if (id.z > 0 && id.z < numberOfVoxels.z - 1)
-    {
-        FluidVoxel voxelZMinus = GetFluidVoxel(id - uint3(0, 0, 1));
-        FluidVoxel voxelZPlus = GetFluidVoxel(id + uint3(0, 0, 1));
-        
-        float pMinus = voxelZMinus.IsFluid() ? voxelZMinus.pressure : voxel.pressure;
-        float pPlus = voxelZPlus.IsFluid() ? voxelZPlus.pressure : voxel.pressure;
-        
-        pressureGradient.z = (pPlus - pMinus) / (2.0f * voxelSpacing);
+        // Add to gradient based on direction
+        if (i < 2) // X direction
+        {
+            float sign = (i == 0) ? -1.0f : 1.0f;
+            pressureGradient.x += sign * neighborPressure / (2.0f * voxelSpacing);
+        }
+        else if (i < 4) // Y direction
+        {
+            float sign = (i == 2) ? -1.0f : 1.0f;
+            pressureGradient.y += sign * neighborPressure / (2.0f * voxelSpacing);
+        }
+        else // Z direction
+        {
+            float sign = (i == 4) ? -1.0f : 1.0f;
+            pressureGradient.z += sign * neighborPressure / (2.0f * voxelSpacing);
+        }
     }
     
     // Subtract pressure gradient from velocity (making it divergence-free)
-    voxel.velocity -= pressureGradient * deltaTime / voxel.density;
+    if (voxel.density > 0.001f)
+    {
+        voxel.velocity -= pressureGradient * deltaTime / voxel.density;
+        
+        // Maintain fluid SDF
+        voxel.voxel.valueAndGradient.x = -voxel.density;
+    }
     
     SetFluidVoxelBackBuffer(id, voxel);
 }
@@ -287,95 +334,45 @@ void ApplyBoundaryConditions(uint3 id : SV_DispatchThreadID)
         voxel.density = 0.0f;
         voxel.velocity = float3(0, 0, 0);
         voxel.pressure = 0.0f;
+        voxel.voxel.valueAndGradient.x = 1.0f; // Positive SDF for solid
         SetFluidVoxel(id, voxel);
         return;
     }
     
-    // Check if any neighbor is a solid boundary
-    uint3 offsets[6] = {
-        uint3(-1, 0, 0), uint3(1, 0, 0),
-        uint3(0, -1, 0), uint3(0, 1, 0),
-        uint3(0, 0, -1), uint3(0, 0, 1)
-    };
+    // Apply no-slip boundary conditions at solid interfaces
+    bool hasFluid = voxel.IsFluid() && voxel.density > 0.001f;
     
-    for (int i = 0; i < 6; i++)
+    if (hasFluid)
     {
-        if (i < 2) // X-axis neighbors
-        {
-            if ((i == 0 && id.x > 0) || (i == 1 && id.x < numberOfVoxels.x - 1))
-            {
-                uint3 neighborCoord = (i == 0) ? id - uint3(1, 0, 0) : id + uint3(1, 0, 0);
-                FluidVoxel neighbor = GetFluidVoxelBackBuffer(neighborCoord);
-                if (neighbor.IsSolid())
-                {
-                    voxel.velocity.x = 0; // No-slip boundary condition
-                }
-            }
-        }
-        else if (i < 4) // Y-axis neighbors
-        {
-            if ((i == 2 && id.y > 0) || (i == 3 && id.y < numberOfVoxels.y - 1))
-            {
-                uint3 neighborCoord = (i == 2) ? id - uint3(0, 1, 0) : id + uint3(0, 1, 0);
-                FluidVoxel neighbor = GetFluidVoxelBackBuffer(neighborCoord);
-                if (neighbor.IsSolid())
-                {
-                    voxel.velocity.y = 0; // No-slip boundary condition
-                }
-            }
-        }
-        else // Z-axis neighbors
-        {
-            if ((i == 4 && id.z > 0) || (i == 5 && id.z < numberOfVoxels.z - 1))
-            {
-                uint3 neighborCoord = (i == 4) ? id - uint3(0, 0, 1) : id + uint3(0, 0, 1);
-                FluidVoxel neighbor = GetFluidVoxelBackBuffer(neighborCoord);
-                if (neighbor.IsSolid())
-                {
-                    voxel.velocity.z = 0; // No-slip boundary condition
-                }
-            }
-        }
-    }
-    
-    SetFluidVoxel(id, voxel);
-}
-
-[numthreads(4, 4, 4)]
-void AddFluidSource(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
+        // Check neighbors for solid boundaries
+        uint3 offsets[6] = {
+            uint3(-1, 0, 0), uint3(1, 0, 0),
+            uint3(0, -1, 0), uint3(0, 1, 0),
+            uint3(0, 0, -1), uint3(0, 0, 1)
+        };
         
-    FluidVoxel voxel = GetFluidVoxel(id);
-    
-    // Skip if this is a solid boundary
-    if (voxel.IsSolid())
-        return;
-    
-    // Calculate distance from source position
-    float3 voxelWorldPos = FluidVolumeToWorldSpace(FluidVoxelToVolumeSpace(id));
-    float distance = length(voxelWorldPos - sourcePosition);
-    
-    // Add fluid within source radius
-    if (distance < sourceRadius)
-    {
-        float falloff = 1.0f - (distance / sourceRadius);
-        falloff = smoothstep(0, 1, falloff);
-        
-        // Add density
-        voxel.density = saturate(voxel.density + sourceAmount * falloff * deltaTime);
-        
-        // Blend in source velocity
-        float velocityBlend = falloff * deltaTime;
-        voxel.velocity = lerp(voxel.velocity, sourceVelocity, velocityBlend);
-        
-        // Make sure it's marked as fluid
-        if (voxel.density > 0.001f)
+        for (int i = 0; i < 6; i++)
         {
+            uint3 neighborCoord = id + int3(offsets[i]);
             
-            voxel.voxel.materialIndex = sourceMaterial;
+            if (any(neighborCoord >= numberOfVoxels))
+                continue;
+                
+            FluidVoxel neighbor = GetFluidVoxelBackBuffer(neighborCoord);
+            if (neighbor.IsSolid())
+            {
+                // Apply no-slip condition in the direction of the solid
+                if (i < 2) // X direction
+                    voxel.velocity.x *= 0.5f; // Reduced velocity near walls
+                else if (i < 4) // Y direction
+                    voxel.velocity.y *= 0.5f;
+                else // Z direction
+                    voxel.velocity.z *= 0.5f;
+            }
         }
+        
+        // Maintain fluid SDF
+        voxel.voxel.valueAndGradient.x = -voxel.density;
     }
     
     SetFluidVoxel(id, voxel);
@@ -394,16 +391,19 @@ void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
     // Update fluid voxel type based on solid geometry
     if (solidVoxel.IsSolid())
     {
+        // This is now a solid boundary - clear any fluid
         fluidVoxel.voxel = solidVoxel;
-        // This is a solid boundary
         fluidVoxel.density = 0.0f;
         fluidVoxel.velocity = float3(0, 0, 0);
         fluidVoxel.pressure = 0.0f;
     }
-    else if (!fluidVoxel.IsSolid())
+    else if (fluidVoxel.IsSolid() && !solidVoxel.IsSolid())
     {
-        // Was solid but is now empty (solid was removed)
+        // Was solid but is now empty space - initialize as empty fluid space
         fluidVoxel.voxel = solidVoxel;
+        fluidVoxel.density = 0.0f;
+        fluidVoxel.velocity = float3(0, 0, 0);
+        fluidVoxel.pressure = 0.0f;
     }
     
     SetFluidVoxel(id, fluidVoxel);
@@ -421,11 +421,17 @@ void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
     if (fluidVoxel.IsFluid() && fluidVoxel.density > 0.001f)
     {
         // Convert fluid density to signed distance field
-        // Positive values = inside fluid, negative = outside
+        // Negative values = inside fluid (surface), positive = outside
         float sdfValue = fluidDensityThreshold - fluidVoxel.density;
         
         // Calculate gradient from fluid density field
         float3 gradient = CalculateFluidDensityGradient(id, fluidVoxel.density);
+        
+        // Ensure we have a valid gradient
+        if (length(gradient) < 0.001f)
+        {
+            gradient = float3(0, 1, 0); // Default upward normal
+        }
         
         // Create voxel with SDF value and calculated gradient
         outputVoxel = Voxel::Create(float4(sdfValue, gradient), fluidVoxel.voxel.materialIndex);
@@ -438,7 +444,7 @@ void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
     else
     {
         // Empty space - large positive SDF value
-        outputVoxel = Voxel::Create(float4(1.0f, 0.0f, 0.0f, 0.0f), 0);
+        outputVoxel = Voxel::Create(float4(10.0f, 0.0f, 1.0f, 0.0f), 0);
     }
     
     uint index = CalculateFluidVolumeIndex(id);

@@ -32,6 +32,7 @@ namespace Tuntenfisch.Player
         private float3 m_velocity;
         private bool m_primaryDown;
         private bool m_secondaryDown;
+        private bool m_tertiaryDown;
         private float m_verticalMoveDelta;
         private bool m_sprintDown;
 
@@ -58,6 +59,8 @@ namespace Tuntenfisch.Player
         public void OnPrimary(InputValue value) => m_primaryDown = value.isPressed;
 
         public void OnSecondary(InputValue value) => m_secondaryDown = value.isPressed;
+        
+        public void OnTertiary(InputValue value) => m_tertiaryDown = value.isPressed;
         
         public void OnSprint(InputValue value) => m_sprintDown = value.isPressed;
 
@@ -127,7 +130,12 @@ namespace Tuntenfisch.Player
                     WorldManager.Instance.ApplyCSGOperation(new GPUCSGOperator(CSGOperatorIndex.Difference), primitive,
                         default, hit.point, scale);
                 }
+                
+                if (m_tertiaryDown)
+                    WorldManager.Instance.AddFluidSource(hit.point + Vector3.up, Vector3.up * 3f, 5f, 10f, MaterialIndex.Water);
             }
+            
+            
         }
     }
 }

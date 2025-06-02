@@ -177,7 +177,6 @@ MonoBehaviour:
   - 400
   - 450
   m_enableFluidSimulation: 1
-  m_fluidUpdateInterval: 10
 --- !u!114 &337836006
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -251,12 +250,6 @@ MonoBehaviour:
   m_enableSimulation: 1
   m_timeStep: 0.016
   m_pressureIterations: 20
-  m_enableFluidSource: 1
-  m_sourceTransform: {fileID: 543171506}
-  m_sourceRadius: 2
-  m_sourceAmount: 1
-  m_sourceVelocity: {x: 0, y: 1, z: 0}
-  m_sourceMaterial: 4
 --- !u!1 &430985030
 GameObject:
   m_ObjectHideFlags: 0

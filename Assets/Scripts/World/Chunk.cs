@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Tuntenfisch.Fluids;
 using Tuntenfisch.Generics;
 using Tuntenfisch.Generics.Pool;
 using Tuntenfisch.Voxels.CSG;
@@ -40,20 +41,26 @@ namespace Tuntenfisch.World
         private GameObject m_fluidMeshObject;
 
         [SerializeField] private bool m_enableFluidRendering = true;
-        
-        private ComputeBuffer m_fluidVoxelVolumeBuffer;
-        private OnMeshGenerated m_onFluidMeshGeneratedDelegate;
-        private JobHandle m_fluidBakeJobHandle;
-        private bool m_hasFluidVolumeBuffer = false;
 
+        // Fluid simulation data
+        private ChunkFluidData m_fluidData;
+        private FluidSourceData m_fluidSource;
+        private bool m_hasFluidSource = false;
+        private float m_fluidAccumulatedTime = 0f;
+        private float m_fluidTimeStep = 0.016f; // ~60 FPS for fluid simulation
+
+        // Fluid mesh components
         private MeshFilter m_fluidMeshFilter;
         private MeshRenderer m_fluidMeshRenderer;
         private Mesh m_fluidMesh;
+        private OnMeshGenerated m_onFluidMeshGeneratedDelegate;
         private IRequest m_fluidMeshRequest;
+        private JobHandle m_fluidBakeJobHandle;
         private int m_fluidVertexCount;
         private int m_fluidTriangleCount;
 
         public ComputeBuffer VoxelVolumeBuffer => m_voxelVolumeBuffer;
+        public ChunkFluidData FluidData => m_fluidData;
 
         private void Awake()
         {
@@ -62,10 +69,10 @@ namespace Tuntenfisch.World
             ApplyRenderMaterial();
             m_voxelVolumeCSGOperations = new List<GPUVoxelVolumeCSGOperation>();
 
-            // Initialize fluid mesh components if fluid rendering is enabled
-            if (m_enableFluidRendering)
+            // Initialize fluid components if enabled
+            if (m_enableFluidRendering && WorldManager.VoxelConfig.FluidSimulationConfig != null)
             {
-                InitializeFluidMeshComponents();
+                InitializeFluidComponents();
                 m_onFluidMeshGeneratedDelegate = OnFluidMeshGenerated;
             }
         }
@@ -114,22 +121,10 @@ namespace Tuntenfisch.World
                 m_meshCollider.sharedMesh = m_mesh;
             }
 
-            if (m_enableFluidRendering && 
-                (m_flags & ChunkFlags.FluidMeshRegenerationRequested) == ChunkFlags.FluidMeshRegenerationRequested && 
-                (m_flags & ChunkFlags.IsBakingFluidMesh) != ChunkFlags.IsBakingFluidMesh && 
-                m_fluidMeshRequest == null &&
-                m_hasFluidVolumeBuffer)
+            if (m_enableFluidRendering && m_fluidData != null && m_fluidData.IsValid())
             {
-                m_flags &= ~ChunkFlags.FluidMeshRegenerationRequested;
-                m_fluidMeshRequest = GenerateFluidMeshAsync();
-            }
-
-            // Handle fluid mesh baking completion
-            if ((m_flags & ChunkFlags.IsBakingFluidMesh) == ChunkFlags.IsBakingFluidMesh && m_fluidBakeJobHandle.IsCompleted)
-            {
-                m_flags &= ~ChunkFlags.IsBakingFluidMesh;
-                // Note: Fluid meshes typically don't need colliders, but if needed:
-                // ApplyFluidMeshCollider();
+                UpdateFluidSimulation();
+                HandleFluidMeshGeneration();
             }
         }
 
@@ -150,12 +145,19 @@ namespace Tuntenfisch.World
             m_currentLOD = m_targetLOD = m_vertexCount = m_triangleCount = -1;
             CreateBuffers();
             gameObject.SetActive(true);
-            if (m_enableFluidRendering)
+
+            // Reset fluid state
+            if (m_enableFluidRendering && m_fluidData != null)
             {
-                m_fluidVertexCount = m_fluidTriangleCount = 0;
-                m_hasFluidVolumeBuffer = false;
-                m_fluidVoxelVolumeBuffer = null;
-                
+                m_hasFluidSource = false;
+                m_fluidSource = null;
+                m_fluidData.HasFluidSource = false;
+                m_fluidData.FluidSource = null;
+                m_fluidVertexCount = 0;
+                m_fluidTriangleCount = 0;
+
+                CreateFluidBuffers();
+
                 if (m_fluidMeshObject != null)
                 {
                     m_fluidMeshObject.SetActive(true);
@@ -172,16 +174,15 @@ namespace Tuntenfisch.World
             m_voxelVolumeCSGOperations.Clear();
             m_flags = 0;
             gameObject.SetActive(false);
-            // Clear fluid mesh
+
+            // Clear fluid state
             if (m_enableFluidRendering)
             {
                 ClearFluidMesh();
                 m_fluidMeshRequest?.Cancel();
                 m_fluidMeshRequest = null;
-                m_hasFluidVolumeBuffer = false;
-                m_fluidVoxelVolumeBuffer = null;
-                
-                // Clean up fluid mesh object
+                m_hasFluidSource = false;
+
                 if (m_fluidMeshObject != null)
                 {
                     m_fluidMeshObject.SetActive(false);
@@ -189,53 +190,18 @@ namespace Tuntenfisch.World
             }
         }
 
-        private IRequest GenerateFluidMeshAsync()
+        private void InitializeFluidComponents()
         {
-            if (!m_hasFluidVolumeBuffer || m_fluidVoxelVolumeBuffer == null)
+            // Create fluid data container
+            m_fluidData = new ChunkFluidData
             {
-                Debug.LogWarning($"Chunk {name}: Cannot generate fluid mesh - no fluid volume buffer available");
-                return null;
-            }
+                WorldPosition = transform.position,
+                HasFluidSource = false,
+                FluidSource = null
+            };
 
-            // Use the same LOD as the solid mesh for consistency
-            int fluidLOD = m_targetLOD;
-            
-            // Request fluid mesh generation using DualContouring
-            // We use the current vertex/triangle counts as estimates, or default values for first generation
-            int estimatedVertexCount = m_fluidVertexCount > 0 ? m_fluidVertexCount : 1000;
-            int estimatedTriangleCount = m_fluidTriangleCount > 0 ? m_fluidTriangleCount : 3000;
-
-            return WorldManager.DualContouring.RequestMeshAsync(
-                m_fluidVoxelVolumeBuffer,
-                -1, // currentLOD (-1 indicates new/unknown)
-                fluidLOD, // targetLOD
-                estimatedVertexCount,
-                estimatedTriangleCount,
-                transform.position,
-                m_onFluidMeshGeneratedDelegate
-            );
-        }
-        public void RegenerateFluidMesh(ComputeBuffer fluidVoxelVolumeBuffer = null)
-        {
-            if (!m_enableFluidRendering)
-                return;
-
-            if (fluidVoxelVolumeBuffer != null)
-            {
-                // Store reference to the fluid voxel volume buffer
-                m_fluidVoxelVolumeBuffer = fluidVoxelVolumeBuffer;
-                m_hasFluidVolumeBuffer = true;
-                
-                // Request fluid mesh generation
-                m_flags |= ChunkFlags.FluidMeshRegenerationRequested;
-            }
-            else
-            {
-                // Clear fluid mesh if no fluid data provided
-                ClearFluidMesh();
-                m_hasFluidVolumeBuffer = false;
-                m_fluidVoxelVolumeBuffer = null;
-            }
+            // Initialize fluid mesh components
+            InitializeFluidMeshComponents();
         }
 
         private void InitializeFluidMeshComponents()
@@ -255,31 +221,11 @@ namespace Tuntenfisch.World
             m_fluidMesh = new Mesh();
             m_fluidMesh.MarkDynamic();
             m_fluidMesh.name = $"FluidMesh_{name}";
-            
+
             m_fluidMeshFilter = m_fluidMeshObject.GetComponent<MeshFilter>();
             m_fluidMeshRenderer = m_fluidMeshObject.GetComponent<MeshRenderer>();
-            
-            // Apply fluid material from VoxelConfig
+
             ApplyFluidRenderMaterial();
-        }
-
-        private void ApplyFluidRenderMaterial()
-        {
-            if (m_fluidMeshRenderer != null && WorldManager.VoxelConfig?.MaterialConfig?.FluidRenderMaterial != null)
-            {
-                m_fluidMeshRenderer.material = WorldManager.VoxelConfig.MaterialConfig.FluidRenderMaterial;
-            }
-        }
-
-        private void ClearFluidMesh()
-        {
-            if (m_fluidMeshFilter != null)
-            {
-                m_fluidMeshFilter.sharedMesh = null;
-            }
-            
-            m_fluidVertexCount = 0;
-            m_fluidTriangleCount = 0;
         }
 
         public bool GetMaterialFromRaycastHit(RaycastHit hit, out MaterialIndex materialIndex)
@@ -315,22 +261,114 @@ namespace Tuntenfisch.World
             return true;
         }
 
+        private void UpdateFluidSimulation()
+        {
+            if (WorldManager.FluidSimulation == null || !WorldManager.FluidSimulation.IsSimulationEnabled)
+                return;
+
+            m_fluidAccumulatedTime += Time.deltaTime;
+
+            // Fixed timestep fluid simulation
+            while (m_fluidAccumulatedTime >= m_fluidTimeStep)
+            {
+                // Update fluid data with current position
+                m_fluidData.WorldPosition = transform.position;
+                m_fluidData.VoxelVolumeBuffer = m_voxelVolumeBuffer;
+                m_fluidData.HasFluidSource = m_hasFluidSource;
+                m_fluidData.FluidSource = m_fluidSource;
+
+                // Run fluid simulation step
+                WorldManager.FluidSimulation.SimulateChunkFluidStep(m_fluidData);
+
+                m_fluidAccumulatedTime -= m_fluidTimeStep;
+            }
+        }
+
+        private void HandleFluidMeshGeneration()
+        {
+            // Check if fluid mesh regeneration is needed/requested
+            if ((m_flags & ChunkFlags.FluidMeshRegenerationRequested) == ChunkFlags.FluidMeshRegenerationRequested &&
+                (m_flags & ChunkFlags.IsBakingFluidMesh) != ChunkFlags.IsBakingFluidMesh &&
+                m_fluidMeshRequest == null)
+            {
+                m_flags &= ~ChunkFlags.FluidMeshRegenerationRequested;
+                GenerateFluidMeshAsync();
+            }
+
+            // Handle fluid mesh baking completion
+            if ((m_flags & ChunkFlags.IsBakingFluidMesh) == ChunkFlags.IsBakingFluidMesh &&
+                m_fluidBakeJobHandle.IsCompleted)
+            {
+                m_flags &= ~ChunkFlags.IsBakingFluidMesh;
+                // Fluid meshes typically don't need colliders
+            }
+        }
+
         private void CreateBuffers()
         {
+            // Create solid voxel volume buffer (existing code)
             if (m_voxelVolumeBuffer?.count != WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelCount)
             {
                 m_voxelVolumeBuffer?.Release();
                 m_voxelVolumeBuffer = new ComputeBuffer(WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelCount,
                     2 * sizeof(uint));
             }
+
+            // Create fluid buffers if fluid rendering is enabled
+            if (m_enableFluidRendering && m_fluidData != null)
+            {
+                CreateFluidBuffers();
+            }
+        }
+
+        private void CreateFluidBuffers()
+        {
+            int voxelCount = WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelCount;
+            int fluidVoxelSize = GetFluidVoxelSizeInBytes();
+
+            // Release existing fluid buffers
+            ReleaseFluidBuffers();
+
+            // Create new fluid buffers
+            m_fluidData.FluidVolumeBuffer = new ComputeBuffer(voxelCount, fluidVoxelSize);
+            m_fluidData.FluidVolumeBackBuffer = new ComputeBuffer(voxelCount, fluidVoxelSize);
+            m_fluidData.TempVoxelVolumeBuffer = new ComputeBuffer(voxelCount, 2 * sizeof(uint)); // PackedVoxel size
+
+            // Initialize fluid volume
+            if (WorldManager.FluidSimulation != null)
+            {
+                WorldManager.FluidSimulation.InitializeChunkFluidVolume(
+                    m_fluidData.FluidVolumeBuffer,
+                    m_fluidData.FluidVolumeBackBuffer,
+                    transform.position
+                );
+            }
         }
 
         private void ReleaseBuffers()
         {
+            // Release solid voxel buffer (existing code)
             if (m_voxelVolumeBuffer != null)
             {
                 m_voxelVolumeBuffer.Release();
                 m_voxelVolumeBuffer = null;
+            }
+
+            // Release fluid buffers
+            ReleaseFluidBuffers();
+        }
+
+        private void ReleaseFluidBuffers()
+        {
+            if (m_fluidData != null)
+            {
+                m_fluidData.FluidVolumeBuffer?.Release();
+                m_fluidData.FluidVolumeBackBuffer?.Release();
+                m_fluidData.TempVoxelVolumeBuffer?.Release();
+
+                m_fluidData.FluidVolumeBuffer = null;
+                m_fluidData.FluidVolumeBackBuffer = null;
+                m_fluidData.TempVoxelVolumeBuffer = null;
             }
         }
 
@@ -406,49 +444,6 @@ namespace Tuntenfisch.World
             m_bakeJobHandle = new BakeJob(m_mesh.GetInstanceID()).Schedule();
             m_flags |= ChunkFlags.IsBakingMesh;
         }
-        
-        private void OnFluidMeshGenerated(NativeArray<GPUVertex> vertices, int vertexCount, int vertexStartIndex, 
-                                        NativeArray<int> triangles, int triangleCount, int triangleStartIndex)
-        {
-            m_fluidMeshRequest = null;
-            m_fluidVertexCount = vertexCount;
-            m_fluidTriangleCount = triangleCount;
-
-            if (vertexCount == 0 || triangleCount == 0)
-            {
-                // No fluid surface to render
-                ClearFluidMesh();
-                return;
-            }
-
-            // Configure fluid mesh with generated data
-            m_fluidMesh.SetVertexBufferParams(vertexCount, GPUVertex.Attributes);
-            m_fluidMesh.SetIndexBufferParams(triangleCount, IndexFormat.UInt32);
-
-#if !UNITY_EDITOR
-            MeshUpdateFlags flags = MeshUpdateFlags.DontNotifyMeshUsers | MeshUpdateFlags.DontRecalculateBounds | 
-                                  MeshUpdateFlags.DontResetBoneBounds | MeshUpdateFlags.DontValidateIndices;
-            m_fluidMesh.SetVertexBufferData(vertices, vertexStartIndex, 0, vertexCount, 0, flags);
-            m_fluidMesh.SetIndexBufferData(triangles, triangleStartIndex, 0, triangleCount, flags);
-            m_fluidMesh.SetSubMesh(0, new SubMeshDescriptor(0, triangleCount), flags);
-            m_fluidMesh.RecalculateBounds(flags);
-#else
-            m_fluidMesh.SetVertexBufferData(vertices, vertexStartIndex, 0, vertexCount);
-            m_fluidMesh.SetIndexBufferData(triangles, triangleStartIndex, 0, triangleCount);
-            m_fluidMesh.SetSubMesh(0, new SubMeshDescriptor(0, triangleCount));
-            m_fluidMesh.RecalculateBounds(MeshUpdateFlags.DontValidateIndices);
-#endif
-
-            // Apply the generated mesh
-            m_fluidMeshFilter.sharedMesh = null;
-            m_fluidMeshFilter.sharedMesh = m_fluidMesh;
-
-            Debug.Log("Fluid mesh set");
-
-            // Start baking job for physics if needed (typically fluids don't need colliders)
-            // m_fluidBakeJobHandle = new BakeJob(m_fluidMesh.GetInstanceID()).Schedule();
-            // m_flags |= ChunkFlags.IsBakingFluidMesh;
-        }
 
         private void InitializeMeshComponents()
         {
@@ -474,12 +469,12 @@ namespace Tuntenfisch.World
                 m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
             }
         }
-        
+
         private void OnMaterialConfigChanged()
         {
             // Update both solid and fluid materials
             ApplyRenderMaterial(); // existing method for solid
-            
+
             if (m_enableFluidRendering)
             {
                 ApplyFluidRenderMaterial();
@@ -493,21 +488,154 @@ namespace Tuntenfisch.World
 
         private void ApplyRenderMaterial() =>
             m_meshRenderer.material = WorldManager.VoxelConfig.MaterialConfig.RenderMaterial;
-        
-        public bool HasActiveFluid()
+
+        public void AddFluidSource(Vector3 worldPosition, Vector3 velocity, float radius, float amount,
+            MaterialIndex material = MaterialIndex.Water)
         {
-            return m_enableFluidRendering && m_hasFluidVolumeBuffer && m_fluidVertexCount > 0;
+            if (!m_enableFluidRendering || m_fluidData == null)
+                return;
+
+            m_hasFluidSource = true;
+            m_fluidSource = new FluidSourceData(worldPosition, velocity, radius, amount, material);
+            m_fluidData.HasFluidSource = true;
+            m_fluidData.FluidSource = m_fluidSource;
+
+            // Immediately add the fluid source
+            if (WorldManager.FluidSimulation != null)
+            {
+                WorldManager.FluidSimulation.AddFluidSourceToChunk(m_fluidData, m_fluidSource);
+            }
+
+            // Request fluid mesh regeneration
+            m_flags |= ChunkFlags.FluidMeshRegenerationRequested;
         }
 
-        // Method to manually trigger fluid mesh regeneration (useful for debugging)
-        public void ForceRegenerateFluidMesh()
+        public void RemoveFluidSource()
         {
-            if (m_enableFluidRendering && m_hasFluidVolumeBuffer)
+            if (!m_enableFluidRendering)
+                return;
+
+            m_hasFluidSource = false;
+            m_fluidSource = null;
+
+            if (m_fluidData != null)
             {
-                m_flags |= ChunkFlags.FluidMeshRegenerationRequested;
+                m_fluidData.HasFluidSource = false;
+                m_fluidData.FluidSource = null;
             }
         }
 
+
+        public void RegenerateFluidMesh()
+        {
+            if (!m_enableFluidRendering || m_fluidData == null || !m_fluidData.IsValid())
+                return;
+
+            m_flags |= ChunkFlags.FluidMeshRegenerationRequested;
+        }
+
+        private void GenerateFluidMeshAsync()
+        {
+            if (!m_enableFluidRendering || m_fluidData == null || !m_fluidData.IsValid())
+                return;
+
+            // Convert fluid to voxel volume for mesh generation
+            if (WorldManager.FluidSimulation != null)
+            {
+                WorldManager.FluidSimulation.ConvertChunkFluidToVoxelVolume(
+                    m_fluidData.FluidVolumeBuffer,
+                    m_fluidData.TempVoxelVolumeBuffer,
+                    transform.position
+                );
+            }
+
+            // Use the same LOD as solid mesh
+            int fluidLOD = m_targetLOD;
+            int estimatedVertexCount = m_fluidVertexCount > 0 ? m_fluidVertexCount : 1000;
+            int estimatedTriangleCount = m_fluidTriangleCount > 0 ? m_fluidTriangleCount : 3000;
+
+            // Request mesh generation using DualContouring
+            m_fluidMeshRequest = WorldManager.DualContouring.RequestMeshAsync(
+                m_fluidData.TempVoxelVolumeBuffer,
+                -1, // currentLOD
+                fluidLOD,
+                estimatedVertexCount,
+                estimatedTriangleCount,
+                transform.position,
+                m_onFluidMeshGeneratedDelegate
+            );
+        }
+
+        private void OnFluidMeshGenerated(NativeArray<GPUVertex> vertices, int vertexCount, int vertexStartIndex,
+            NativeArray<int> triangles, int triangleCount, int triangleStartIndex)
+        {
+            m_fluidMeshRequest = null;
+            m_fluidVertexCount = vertexCount;
+            m_fluidTriangleCount = triangleCount;
+
+            if (vertexCount == 0 || triangleCount == 0)
+            {
+                ClearFluidMesh();
+                return;
+            }
+
+            // Configure fluid mesh with generated data
+            m_fluidMesh.SetVertexBufferParams(vertexCount, GPUVertex.Attributes);
+            m_fluidMesh.SetIndexBufferParams(triangleCount, IndexFormat.UInt32);
+
+#if !UNITY_EDITOR
+            MeshUpdateFlags flags = MeshUpdateFlags.DontNotifyMeshUsers | MeshUpdateFlags.DontRecalculateBounds |
+                                  MeshUpdateFlags.DontResetBoneBounds | MeshUpdateFlags.DontValidateIndices;
+            m_fluidMesh.SetVertexBufferData(vertices, vertexStartIndex, 0, vertexCount, 0, flags);
+            m_fluidMesh.SetIndexBufferData(triangles, triangleStartIndex, 0, triangleCount, flags);
+            m_fluidMesh.SetSubMesh(0, new SubMeshDescriptor(0, triangleCount), flags);
+            m_fluidMesh.RecalculateBounds(flags);
+#else
+            m_fluidMesh.SetVertexBufferData(vertices, vertexStartIndex, 0, vertexCount);
+            m_fluidMesh.SetIndexBufferData(triangles, triangleStartIndex, 0, triangleCount);
+            m_fluidMesh.SetSubMesh(0, new SubMeshDescriptor(0, triangleCount));
+            m_fluidMesh.RecalculateBounds(MeshUpdateFlags.DontValidateIndices);
+#endif
+
+            // Apply the generated mesh
+            m_fluidMeshFilter.sharedMesh = null;
+            m_fluidMeshFilter.sharedMesh = m_fluidMesh;
+
+            Debug.Log($"Fluid mesh generated: {vertexCount} vertices, {triangleCount} triangles");
+        }
+
+        private void ClearFluidMesh()
+        {
+            if (m_fluidMeshFilter != null)
+            {
+                m_fluidMeshFilter.sharedMesh = null;
+            }
+
+            m_fluidVertexCount = 0;
+            m_fluidTriangleCount = 0;
+        }
+
+        private void ApplyFluidRenderMaterial()
+        {
+            if (m_fluidMeshRenderer != null && WorldManager.VoxelConfig?.MaterialConfig?.FluidRenderMaterial != null)
+            {
+                m_fluidMeshRenderer.material = WorldManager.VoxelConfig.MaterialConfig.FluidRenderMaterial;
+            }
+        }
+
+        public bool HasActiveFluid()
+        {
+            return m_enableFluidRendering && m_fluidData != null && m_fluidData.IsValid() &&
+                   (m_hasFluidSource || m_fluidVertexCount > 0);
+        }
+
+        private int GetFluidVoxelSizeInBytes()
+        {
+            // PackedFluidVoxel structure size: PackedVoxel (8 bytes) + 3 uints (12 bytes) = 20 bytes
+            return 20;
+        }
+
+        // Update flags enum to include fluid flags
         [Flags]
         private enum ChunkFlags
         {
@@ -515,8 +643,9 @@ namespace Tuntenfisch.World
             CSGOperationPerformed = 2,
             MeshRegenerationRequested = 4,
             IsBakingMesh = 8,
-            FluidMeshRegenerationRequested = 16, // New flag
-            IsBakingFluidMesh = 32 // New flag
+            FluidMeshRegenerationRequested = 16,
+            IsBakingFluidMesh = 32
         }
     }
 }
+
