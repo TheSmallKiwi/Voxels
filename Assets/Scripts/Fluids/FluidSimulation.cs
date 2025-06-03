@@ -192,23 +192,23 @@ namespace Tuntenfisch.Fluids
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
             var numberOfVoxels = m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
 
-            // // 1. Update boundaries from solid geometry
-            // UpdateFluidVolumeBoundary(chunkData, compute, numberOfVoxels);
+            // 1. Update boundaries from solid geometry
+            UpdateFluidVolumeBoundary(chunkData, compute, numberOfVoxels);
 
             // 2. Add fluid sources
             AddFluidSourceToChunk(chunkData, compute, numberOfVoxels);
 
-            // // 3. Advection step
-            // ExecuteAdvectionStep(chunkData, compute, numberOfVoxels);
-            //
-            // // 4. Apply external forces
-            // ApplyExternalForces(chunkData, compute, numberOfVoxels);
-            //
-            // // 5. Pressure projection (multiple iterations)
-            // ComputeFluidDivergenceAndPressure(chunkData, compute, numberOfVoxels);
-            //
-            // // 6. Apply boundary conditions
-            // ApplyBoundaryConditions(chunkData, compute, numberOfVoxels);
+            // 3. Advection step
+            ExecuteAdvectionStep(chunkData, compute, numberOfVoxels);
+            
+            // 4. Apply external forces
+            ApplyExternalForces(chunkData, compute, numberOfVoxels);
+            
+            // 5. Pressure projection (multiple iterations)
+            ComputeFluidDivergenceAndPressure(chunkData, compute, numberOfVoxels);
+            
+            // 6. Apply boundary conditions
+            ApplyBoundaryConditions(chunkData, compute, numberOfVoxels);
 
             // 7. Swap fluid buffers
             chunkData.SwapBuffers();

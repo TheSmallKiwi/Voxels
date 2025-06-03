@@ -268,9 +268,9 @@ namespace Tuntenfisch.World
 
             m_fluidAccumulatedTime += Time.deltaTime;
 
-            // Fixed timestep fluid simulation
-            while (m_fluidAccumulatedTime >= m_fluidTimeStep)
-            {
+            // // Fixed timestep fluid simulation
+            // while (m_fluidAccumulatedTime >= m_fluidTimeStep)
+            // {
                 // Update fluid data with current position
                 m_fluidData.WorldPosition = transform.position;
                 m_fluidData.VoxelVolumeBuffer = m_voxelVolumeBuffer;
@@ -281,7 +281,7 @@ namespace Tuntenfisch.World
                 WorldManager.FluidSimulation.SimulateChunkFluidStep(m_fluidData);
             
                 m_fluidAccumulatedTime -= m_fluidTimeStep;
-            }
+            // }
         }
 
         private void HandleFluidMeshGeneration()
