@@ -4,8 +4,8 @@
 #include "Assets/Compute/Fluids/Include/FluidVoxel.hlsl"
 #include "Assets/Compute/Voxels/Include/VoxelVolume.hlsl"
 
-RWStructuredBuffer<PackedFluidVoxel> fluidVolume;
-RWStructuredBuffer<PackedFluidVoxel> fluidVolumeBackBuffer; // For double buffering
+StructuredBuffer<PackedFluidVoxel> fluidVolume; // Read Buffer
+RWStructuredBuffer<PackedFluidVoxel> fluidVolumeBackBuffer; // Write Buffer
 
 float3 fluidVolumeToWorldSpaceOffset;
 
@@ -26,16 +26,6 @@ FluidVoxel GetFluidVoxel(uint3 coordinate)
 }
 
 void SetFluidVoxel(uint3 coordinate, FluidVoxel voxel)
-{
-    fluidVolume[CalculateFluidVolumeIndex(coordinate)] = PackFluidVoxel(voxel);
-}
-
-FluidVoxel GetFluidVoxelBackBuffer(uint3 coordinate)
-{
-    return UnpackFluidVoxel(fluidVolumeBackBuffer[CalculateFluidVolumeIndex(coordinate)]);
-}
-
-void SetFluidVoxelBackBuffer(uint3 coordinate, FluidVoxel voxel)
 {
     fluidVolumeBackBuffer[CalculateFluidVolumeIndex(coordinate)] = PackFluidVoxel(voxel);
 }
@@ -110,7 +100,7 @@ FluidVoxel SampleFluidVoxelTrilinear(float3 position)
     float3 voxelPos = WorldToFluidVolumeSpace(position) / voxelSpacing + 0.5f * (numberOfVoxels - 1.0f);
     
     // Clamp to valid range
-    voxelPos = clamp(voxelPos, 0.0f, float3(numberOfVoxels - 1));
+    voxelPos = clamp(voxelPos, 0.0f, float3(numberOfVoxels - 2));
     
     // Get base coordinate and fractional part
     uint3 baseCoord = uint3(floor(voxelPos));
@@ -138,7 +128,7 @@ FluidVoxel SampleFluidVoxelTrilinear(float3 position)
     
     for (uint i = 0; i < 8; i++)
     {
-        if (voxels[i].voxel.GetValue() < 0.0f) // Skip empty voxels
+        if (voxels[i].voxel.GetValue() > 0.0f) // Skip empty voxels
             continue;
         material_index_count[voxels[i].voxel.materialIndex]++;
     }

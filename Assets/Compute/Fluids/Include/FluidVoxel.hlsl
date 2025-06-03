@@ -12,12 +12,12 @@ struct FluidVoxel
 
     bool IsFluid()
     {
-        return voxel.IsSolid() && voxel.materialIndex >= fluidMaterialStartIndex;
+        return voxel.GetValue() < 0.0f && voxel.materialIndex >= fluidMaterialStartIndex;
     }
 
     bool IsSolid()
     {
-        return voxel.IsSolid() && voxel.materialIndex < fluidMaterialStartIndex;
+        return voxel.GetValue() < 0.0f && voxel.materialIndex < fluidMaterialStartIndex;
     }
 
     static FluidVoxel Create()

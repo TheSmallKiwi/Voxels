@@ -35,16 +35,15 @@ void InitializeFluidVolume(uint3 id : SV_DispatchThreadID)
         return;
 
     // Initialize with empty fluid voxel
-    FluidVoxel voxel = FluidVoxel::Create();
+    FluidVoxel voxel;
 
     // Start with empty space (negative SDF)
-    voxel.voxel = Voxel::Create(float4(-10.0f, 0, 1, 0), 0);
+    voxel.voxel = Voxel::Create(float4(1.0f, 0, 1, 0), 0);
     voxel.velocity = float3(0, 0, 0);
     voxel.pressure = 0.0f;
     voxel.temperature = 0.0f;
 
     SetFluidVoxel(id, voxel);
-    SetFluidVoxelBackBuffer(id, voxel);
 }
 
 [numthreads(4, 4, 4)]
@@ -70,11 +69,11 @@ void AddFluidSource(uint3 id : SV_DispatchThreadID)
     {
         // Directly modify SDF - positive inside fluid
         float falloff = 1.0f - smoothstep(0.0f, sourceRadius, distance);
-        fluidLevel += sourceAmount * falloff;
+        fluidLevel -= sourceAmount * falloff;
         fVoxel.voxel.SetValue(fluidLevel);
 
         // Blend velocity towards source velocity
-        if (fluidLevel > 0.0f)
+        if (fluidLevel < 0.0f)
         {
             float velocityBlend = falloff * deltaTime * 2.0f;
             fVoxel.velocity = lerp(fVoxel.velocity, sourceVelocity, min(velocityBlend, 1.0f));
@@ -109,7 +108,7 @@ void Advection(uint3 id : SV_DispatchThreadID)
     // Skip solid voxels (terrain)
     if (fVoxel.IsSolid() || !fVoxel.IsFluid())
     {
-        SetFluidVoxelBackBuffer(id, fVoxel);
+        SetFluidVoxel(id, fVoxel);
         return;
     }
 
@@ -140,11 +139,10 @@ void Advection(uint3 id : SV_DispatchThreadID)
     newVoxel.voxel.materialIndex = sampledVoxel.voxel.materialIndex;
 
     // Recalculate gradient (surface normal) for the advected SDF
-    // This is important for proper mesh generation
     float3 gradient = CalculateSDFGradient(id, newVoxel.voxel.valueAndGradient.x);
     newVoxel.voxel.valueAndGradient.yzw = gradient;
 
-    SetFluidVoxelBackBuffer(id, newVoxel);
+    SetFluidVoxel(id, newVoxel);
 }
 
 [numthreads(4, 4, 4)]
@@ -153,27 +151,27 @@ void ExternalForces(uint3 id : SV_DispatchThreadID)
     if (IsOutOfFluidVolumeBounds(id))
         return;
 
-    FluidVoxel voxel = GetFluidVoxelBackBuffer(id);
+    FluidVoxel fVoxel = GetFluidVoxel(id);
 
     // Only apply forces to fluid voxels
-    if (voxel.IsFluid())
+    if (fVoxel.IsFluid())
     {
         // Apply gravity - this is crucial for proper flow
-        voxel.velocity += gravity * deltaTime;
+        fVoxel.velocity += gravity * deltaTime;
 
         // Apply viscosity damping
-        voxel.velocity *= (1.0f - viscosity * deltaTime);
+        fVoxel.velocity *= (1.0f - viscosity * deltaTime);
 
         // Ensure velocity doesn't become too extreme
         float maxVelocity = 50.0f; // Adjust based on voxel spacing
-        float velocityMagnitude = length(voxel.velocity);
+        float velocityMagnitude = length(fVoxel.velocity);
         if (velocityMagnitude > maxVelocity)
         {
-            voxel.velocity = (voxel.velocity / velocityMagnitude) * maxVelocity;
+            fVoxel.velocity = (fVoxel.velocity / velocityMagnitude) * maxVelocity;
         }
     }
 
-    SetFluidVoxel(id, voxel);
+    SetFluidVoxel(id, fVoxel);
 }
 
 [numthreads(4, 4, 4)]
@@ -183,17 +181,18 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
         return;
 
     uint index = CalculateFluidVolumeIndex(id);
-    FluidVoxel voxel = GetFluidVoxel(id);
+    FluidVoxel fVoxel = GetFluidVoxel(id);
 
     // Skip non-fluid voxels
-    if (!voxel.IsFluid())
+    if (!fVoxel.IsFluid())
     {
         divergenceBuffer[index] = 0.0f;
         return;
     }
 
     // Compute divergence using central differences
-    float divergence = 0.0f;
+    // Testing
+    float divergence = -1.0f - fVoxel.voxel.GetValue(); // If voxel holds too much fluid, diverge
 
     // X-axis
     if (id.x > 0 && id.x < numberOfVoxels.x - 1)
@@ -251,7 +250,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     if (!fVoxel.IsFluid())
     {
         fVoxel.pressure = 0.0f;
-        SetFluidVoxelBackBuffer(id, fVoxel);
+        SetFluidVoxel(id, fVoxel);
         return;
     }
 
@@ -329,7 +328,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     // Subtract pressure gradient from velocity
     fVoxel.velocity -= pressureGradient * deltaTime;
 
-    SetFluidVoxelBackBuffer(id, fVoxel);
+    SetFluidVoxel(id, fVoxel);
 }
 
 [numthreads(4, 4, 4)]
@@ -338,7 +337,7 @@ void ApplyBoundaryConditions(uint3 id : SV_DispatchThreadID)
     if (IsOutOfFluidVolumeBounds(id))
         return;
 
-    FluidVoxel voxel = GetFluidVoxelBackBuffer(id);
+    FluidVoxel voxel = GetFluidVoxel(id);
 
     // Apply volume boundary conditions
     bool atBoundary = (id.x == 0 || id.x == numberOfVoxels.x - 1 ||
@@ -374,7 +373,7 @@ void ApplyBoundaryConditions(uint3 id : SV_DispatchThreadID)
             if (any(neighborCoord < 0) || any(neighborCoord >= int3(numberOfVoxels)))
                 continue;
 
-            FluidVoxel neighbor = GetFluidVoxelBackBuffer(uint3(neighborCoord));
+            FluidVoxel neighbor = GetFluidVoxel(uint3(neighborCoord));
             if (neighbor.IsSolid())
             {
                 // Apply friction at solid boundaries
@@ -404,7 +403,7 @@ void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
     FluidVoxel fluidVoxel = GetFluidVoxel(id);
 
     // Update fluid boundaries based on solid geometry
-    if (solidVoxel.IsSolid())
+    if (solidVoxel.GetValue() < 0.0f)
     {
         fluidVoxel.voxel = solidVoxel;
         fluidVoxel.velocity = float3(0, 0, 0);
@@ -413,7 +412,6 @@ void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
     }
 
     SetFluidVoxel(id, fluidVoxel);
-    SetFluidVoxelBackBuffer(id, fluidVoxel);
 }
 
 [numthreads(4, 4, 4)]
@@ -428,7 +426,7 @@ void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
     if (fluidVoxel.IsFluid())
         outputVoxel = fluidVoxel.voxel;
     else
-        outputVoxel = Voxel::Create(float4(-10.0f, 0.0f, 1.0f, 0.0f), 0);
+        outputVoxel = Voxel::Create(float4(1.0f, 0.0f, 1.0f, 0.0f), 0);
 
     outputVoxelVolume[CalculateFluidVolumeIndex(id)] = PackVoxel(outputVoxel);   
 }

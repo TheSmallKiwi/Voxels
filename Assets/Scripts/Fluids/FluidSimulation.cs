@@ -1,4 +1,3 @@
-
 using Tuntenfisch.Extensions;
 using Tuntenfisch.Voxels;
 using Tuntenfisch.Voxels.Materials;
@@ -14,14 +13,15 @@ namespace Tuntenfisch.Fluids
     [RequireComponent(typeof(VoxelConfig))]
     public class FluidSimulation : MonoBehaviour
     {
-        [Header("Simulation Parameters")]
-        [SerializeField] private bool m_enableSimulation = true;
+        [Header("Simulation Parameters")] [SerializeField]
+        private bool m_enableSimulation = true;
+
         [SerializeField] private float m_timeStep = 0.016f;
         [SerializeField] private int m_pressureIterations = 20;
 
         private VoxelConfig m_voxelConfig;
         private ComputeBuffer m_divergenceBuffer; // Shared temporary buffer
-        
+
         // Compute shader kernel IDs
         private int m_initializeFluidVolumeKernel;
         private int m_advectionKernel;
@@ -32,10 +32,15 @@ namespace Tuntenfisch.Fluids
         private int m_addFluidSourceKernel;
         private int m_updateBoundariesFromSolidsKernel;
         private int m_convertFluidToVoxelVolumeKernel;
-        
+
         private bool m_initialized = false;
-        
+
         public bool IsSimulationEnabled => m_enableSimulation;
+
+        // Fields to keep track of step simulation state
+        private int m_simulationStep = 0;
+        private int m_pressureIterationCounter = 0;
+
 
         private void Awake()
         {
@@ -58,6 +63,78 @@ namespace Tuntenfisch.Fluids
             ReleaseSharedBuffers();
         }
 
+        // This method steps through the fluid simulation one step at a time.
+        public void StepSimulation(ChunkFluidData chunkData)
+        {
+            if (!m_initialized || !m_enableSimulation || !chunkData.IsValid())
+                return;
+
+            var compute = m_voxelConfig.FluidSimulationConfig.Compute;
+            var numberOfVoxels = m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
+
+            // Use m_simulationStep to determine which simulation step to run.
+            switch (m_simulationStep)
+            {
+                // 1. Update boundaries from solid geometry
+                case 0:
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Updating fluid volume boundary for chunk at {chunkData.WorldPosition}");
+                    UpdateFluidVolumeBoundary(chunkData, compute, numberOfVoxels);
+                    m_simulationStep++;
+                    break;
+                // 2. Add fluid sources
+                case 1:
+                    Debug.Log($"Step {m_simulationStep}: Adding fluid sources for chunk at {chunkData.WorldPosition}");
+                    AddFluidSourceToChunk(chunkData, compute, numberOfVoxels);
+                    m_simulationStep++;
+                    break;
+                // 3. Advection step
+                case 2:
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Executing advection step for chunk at {chunkData.WorldPosition}");
+                    ExecuteAdvectionStep(chunkData, compute, numberOfVoxels);
+                    m_simulationStep++;
+                    break;
+                // 4. Apply external forces
+                case 3:
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Applying external forces for chunk at {chunkData.WorldPosition}");
+                    ApplyExternalForces(chunkData, compute, numberOfVoxels);
+                    m_simulationStep++;
+                    break;
+                // 5. Pressure projection
+                case 4:
+                    ComputeFluidDivergenceAndPressure(chunkData, compute, numberOfVoxels);
+
+
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Completed pressure projection iterations for chunk at {chunkData.WorldPosition}");
+                    m_simulationStep++;
+
+                    break;
+                // 6. Apply boundary conditions
+                case 5:
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Applying boundary conditions for chunk at {chunkData.WorldPosition}");
+                    ApplyBoundaryConditions(chunkData, compute, numberOfVoxels);
+                    m_simulationStep++;
+                    break;
+                // 7. Final swap of fluid buffers (if needed) and reset for next cycle
+                case 6:
+                    Debug.Log(
+                        $"Step {m_simulationStep}: Completing simulation cycle for chunk at {chunkData.WorldPosition}");
+                    // A final swap can be done here if desired
+                    chunkData.SwapBuffers();
+                    // Reset simulation cycle
+                    m_simulationStep = 0;
+                    break;
+                default:
+                    m_simulationStep = 0;
+                    break;
+            }
+        }
+
+
         private void InitializeKernels()
         {
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
@@ -76,9 +153,9 @@ namespace Tuntenfisch.Fluids
         private void CreateSharedBuffers()
         {
             ReleaseSharedBuffers();
-            
+
             int voxelCount = m_voxelConfig.VoxelVolumeConfig.VoxelCount;
-            
+
             // Only create shared temporary buffers
             m_divergenceBuffer = new ComputeBuffer(voxelCount, sizeof(float));
         }
@@ -90,17 +167,19 @@ namespace Tuntenfisch.Fluids
         }
 
         // Initialize a chunk's fluid volume buffers
-        public void InitializeChunkFluidVolume(ComputeBuffer fluidVolumeBuffer, ComputeBuffer fluidVolumeBackBuffer, float3 chunkWorldPosition)
+        public void InitializeChunkFluidVolume(ComputeBuffer fluidVolumeBuffer, ComputeBuffer fluidVolumeBackBuffer,
+            float3 chunkWorldPosition)
         {
             if (!m_initialized || fluidVolumeBuffer == null || fluidVolumeBackBuffer == null)
                 return;
 
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
-            
+
+            // Initialize fluid volume buffers
             SetGlobalParameters(compute, chunkWorldPosition);
-            
-            compute.SetBuffer(m_initializeFluidVolumeKernel, "fluidVolume", fluidVolumeBuffer);
             compute.SetBuffer(m_initializeFluidVolumeKernel, "fluidVolumeBackBuffer", fluidVolumeBackBuffer);
+            compute.Dispatch(m_initializeFluidVolumeKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
+            compute.SetBuffer(m_initializeFluidVolumeKernel, "fluidVolumeBackBuffer", fluidVolumeBuffer);
             compute.Dispatch(m_initializeFluidVolumeKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
@@ -112,76 +191,111 @@ namespace Tuntenfisch.Fluids
 
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
             var numberOfVoxels = m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
-            
-            // Set global parameters for this chunk
-            SetGlobalParameters(compute, chunkData.WorldPosition);
-            
-            // Set fluid source parameters if this chunk has one
-            if (chunkData.HasFluidSource)
-            {
-                SetFluidSourceParameters(compute, chunkData.FluidSource);
-            }
 
-            // 1. Update boundaries from solid geometry
-            if (chunkData.VoxelVolumeBuffer != null)
-            {
-                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "voxelVolume", chunkData.VoxelVolumeBuffer);
-                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
-                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
-                compute.Dispatch(m_updateBoundariesFromSolidsKernel, numberOfVoxels);
-            }
+            // // 1. Update boundaries from solid geometry
+            // UpdateFluidVolumeBoundary(chunkData, compute, numberOfVoxels);
 
             // 2. Add fluid sources
-            if (chunkData.HasFluidSource)
-            {
-                compute.SetBuffer(m_addFluidSourceKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
-                compute.SetBuffer(m_addFluidSourceKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
-                compute.Dispatch(m_addFluidSourceKernel, numberOfVoxels);
-            }
+            AddFluidSourceToChunk(chunkData, compute, numberOfVoxels);
 
-            // 3. Advection step
-            compute.SetBuffer(m_advectionKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
-            compute.SetBuffer(m_advectionKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
-            compute.Dispatch(m_advectionKernel, numberOfVoxels);
+            // // 3. Advection step
+            // ExecuteAdvectionStep(chunkData, compute, numberOfVoxels);
+            //
+            // // 4. Apply external forces
+            // ApplyExternalForces(chunkData, compute, numberOfVoxels);
+            //
+            // // 5. Pressure projection (multiple iterations)
+            // ComputeFluidDivergenceAndPressure(chunkData, compute, numberOfVoxels);
+            //
+            // // 6. Apply boundary conditions
+            // ApplyBoundaryConditions(chunkData, compute, numberOfVoxels);
+
+            // 7. Swap fluid buffers
             chunkData.SwapBuffers();
+        }
 
-            // 4. Apply external forces
-            compute.SetBuffer(m_externalForcesKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
-            compute.SetBuffer(m_externalForcesKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
-            compute.Dispatch(m_externalForcesKernel, numberOfVoxels);
+        private void ApplyBoundaryConditions(ChunkFluidData chunkData, ComputeShader compute, int3 numberOfVoxels)
+        {
+            SetGlobalParameters(compute, chunkData.WorldPosition);
+            compute.SetBuffer(m_applyBoundaryConditionsKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
+            compute.SetBuffer(m_applyBoundaryConditionsKernel, "fluidVolumeBackBuffer",
+                chunkData.FluidVolumeBackBuffer);
+            compute.Dispatch(m_applyBoundaryConditionsKernel, numberOfVoxels);
+        }
 
-            // 5. Pressure projection (multiple iterations)
+        private void ComputeFluidDivergenceAndPressure(ChunkFluidData chunkData, ComputeShader compute,
+            int3 numberOfVoxels)
+        {
             for (int i = 0; i < m_pressureIterations; i++)
             {
                 // Compute divergence
+                SetGlobalParameters(compute, chunkData.WorldPosition);
                 compute.SetBuffer(m_computeDivergenceKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
                 compute.SetBuffer(m_computeDivergenceKernel, "divergenceBuffer", m_divergenceBuffer);
                 compute.Dispatch(m_computeDivergenceKernel, numberOfVoxels);
 
                 // Update pressure and apply pressure gradient
+                SetGlobalParameters(compute, chunkData.WorldPosition);
                 compute.SetBuffer(m_pressureProjectionKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
                 compute.SetBuffer(m_pressureProjectionKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
                 compute.SetBuffer(m_pressureProjectionKernel, "divergenceBuffer", m_divergenceBuffer);
                 compute.Dispatch(m_pressureProjectionKernel, numberOfVoxels);
                 chunkData.SwapBuffers();
             }
+        }
 
-            // 6. Apply boundary conditions
-            compute.SetBuffer(m_applyBoundaryConditionsKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
-            compute.SetBuffer(m_applyBoundaryConditionsKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
-            compute.Dispatch(m_applyBoundaryConditionsKernel, numberOfVoxels);
+        private void ApplyExternalForces(ChunkFluidData chunkData, ComputeShader compute, int3 numberOfVoxels)
+        {
+            SetGlobalParameters(compute, chunkData.WorldPosition);
+            compute.SetBuffer(m_externalForcesKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
+            compute.SetBuffer(m_externalForcesKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
+            compute.Dispatch(m_externalForcesKernel, numberOfVoxels);
+        }
+
+        private void ExecuteAdvectionStep(ChunkFluidData chunkData, ComputeShader compute, int3 numberOfVoxels)
+        {
+            SetGlobalParameters(compute, chunkData.WorldPosition);
+            compute.SetBuffer(m_advectionKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
+            compute.SetBuffer(m_advectionKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
+            compute.Dispatch(m_advectionKernel, numberOfVoxels);
+        }
+
+        private void AddFluidSourceToChunk(ChunkFluidData chunkData, ComputeShader compute, int3 numberOfVoxels)
+        {
+            if (chunkData.HasFluidSource)
+            {
+                SetGlobalParameters(compute, chunkData.WorldPosition);
+                SetFluidSourceParameters(compute, chunkData.FluidSource);
+                compute.SetBuffer(m_addFluidSourceKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
+                compute.SetBuffer(m_addFluidSourceKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
+                compute.Dispatch(m_addFluidSourceKernel, numberOfVoxels);
+            }
+        }
+
+        private void UpdateFluidVolumeBoundary(ChunkFluidData chunkData, ComputeShader compute, int3 numberOfVoxels)
+        {
+            if (chunkData.VoxelVolumeBuffer != null)
+            {
+                SetGlobalParameters(compute, chunkData.WorldPosition);
+                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "voxelVolume", chunkData.VoxelVolumeBuffer);
+                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
+                compute.SetBuffer(m_updateBoundariesFromSolidsKernel, "fluidVolumeBackBuffer",
+                    chunkData.FluidVolumeBackBuffer);
+                compute.Dispatch(m_updateBoundariesFromSolidsKernel, numberOfVoxels);
+            }
         }
 
         // Convert chunk fluid to voxel volume for mesh generation
-        public void ConvertChunkFluidToVoxelVolume(ComputeBuffer fluidVolumeBuffer, ComputeBuffer outputVoxelVolumeBuffer, float3 chunkWorldPosition)
+        public void ConvertChunkFluidToVoxelVolume(ComputeBuffer fluidVolumeBuffer,
+            ComputeBuffer outputVoxelVolumeBuffer, float3 chunkWorldPosition)
         {
             if (!m_initialized || fluidVolumeBuffer == null || outputVoxelVolumeBuffer == null)
                 return;
 
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
-            
+
             SetGlobalParameters(compute, chunkWorldPosition);
-            
+
             compute.SetBuffer(m_convertFluidToVoxelVolumeKernel, "fluidVolume", fluidVolumeBuffer);
             compute.SetBuffer(m_convertFluidToVoxelVolumeKernel, "outputVoxelVolume", outputVoxelVolumeBuffer);
             compute.Dispatch(m_convertFluidToVoxelVolumeKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
@@ -194,10 +308,10 @@ namespace Tuntenfisch.Fluids
                 return;
 
             var compute = m_voxelConfig.FluidSimulationConfig.Compute;
-            
+
             SetGlobalParameters(compute, chunkData.WorldPosition);
             SetFluidSourceParameters(compute, sourceData);
-            
+
             compute.SetBuffer(m_addFluidSourceKernel, "fluidVolume", chunkData.FluidVolumeBuffer);
             compute.SetBuffer(m_addFluidSourceKernel, "fluidVolumeBackBuffer", chunkData.FluidVolumeBackBuffer);
             compute.Dispatch(m_addFluidSourceKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
@@ -215,7 +329,8 @@ namespace Tuntenfisch.Fluids
 
             // Set voxel volume parameters
             var volumeConfig = m_voxelConfig.VoxelVolumeConfig;
-            compute.SetInts("numberOfVoxels", volumeConfig.NumberOfVoxels.x, volumeConfig.NumberOfVoxels.y, volumeConfig.NumberOfVoxels.z);
+            compute.SetInts("numberOfVoxels", volumeConfig.NumberOfVoxels.x, volumeConfig.NumberOfVoxels.y,
+                volumeConfig.NumberOfVoxels.z);
             compute.SetFloat("voxelSpacing", volumeConfig.VoxelSpacing);
 
             // Set chunk world position offset
@@ -253,7 +368,7 @@ namespace Tuntenfisch.Fluids
         {
             (FluidVolumeBuffer, FluidVolumeBackBuffer) = (FluidVolumeBackBuffer, FluidVolumeBuffer);
         }
-        
+
         public void DebugOutput()
         {
             Debug.Log($"World Position: {WorldPosition}");
@@ -275,7 +390,8 @@ namespace Tuntenfisch.Fluids
         public float Amount;
         public MaterialIndex Material;
 
-        public FluidSourceData(Vector3 position, Vector3 velocity, float radius, float amount, MaterialIndex material = MaterialIndex.Water)
+        public FluidSourceData(Vector3 position, Vector3 velocity, float radius, float amount,
+            MaterialIndex material = MaterialIndex.Water)
         {
             Position = position;
             Velocity = velocity;

@@ -133,10 +133,10 @@ namespace Tuntenfisch.Player
                 
                 if (m_tertiaryDown)
                     WorldManager.Instance.AddFluidSource(
-                        hit.point + Vector3.up * 3,  // Start higher above ground
-                        Vector3.up * 1f,              // Slower initial velocity
-                        10f,                           // Smaller radius
-                        10000f,                          // Increased amount
+                        hit.point + Vector3.up * 4f,  // Start higher above ground
+                        Vector3.up * 8f,              // Slower initial velocity
+                        4f,                           // Smaller radius
+                        100f,                          // Increased amount
                         MaterialIndex.Water
                     );
             }

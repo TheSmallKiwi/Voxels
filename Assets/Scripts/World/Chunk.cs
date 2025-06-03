@@ -276,10 +276,10 @@ namespace Tuntenfisch.World
                 m_fluidData.VoxelVolumeBuffer = m_voxelVolumeBuffer;
                 m_fluidData.HasFluidSource = m_hasFluidSource;
                 m_fluidData.FluidSource = m_fluidSource;
-
+            
                 // Run fluid simulation step
                 WorldManager.FluidSimulation.SimulateChunkFluidStep(m_fluidData);
-
+            
                 m_fluidAccumulatedTime -= m_fluidTimeStep;
             }
         }
@@ -332,7 +332,7 @@ namespace Tuntenfisch.World
             // Create new fluid buffers
             m_fluidData.FluidVolumeBuffer = new ComputeBuffer(voxelCount, fluidVoxelSize);
             m_fluidData.FluidVolumeBackBuffer = new ComputeBuffer(voxelCount, fluidVoxelSize);
-            m_fluidData.TempVoxelVolumeBuffer = new ComputeBuffer(voxelCount, 2 * sizeof(uint)); // PackedVoxel size
+            m_fluidData.TempVoxelVolumeBuffer = new ComputeBuffer(voxelCount, GetFluidVoxelSizeInBytes()); // PackedVoxel size
 
             // Initialize fluid volume
             if (WorldManager.FluidSimulation != null)
@@ -645,6 +645,12 @@ namespace Tuntenfisch.World
             IsBakingMesh = 8,
             FluidMeshRegenerationRequested = 16,
             IsBakingFluidMesh = 32
+        }
+
+        public void RunStep()
+        {
+            WorldManager.FluidSimulation.StepSimulation(m_fluidData);
+            m_flags |= ChunkFlags.FluidMeshRegenerationRequested;
         }
     }
 }
