@@ -100,12 +100,12 @@ namespace Tuntenfisch.Voxels
             // Apply fluid simulation parameters
             compute.SetFloat("viscosity", m_fluidSimulationConfig.Viscosity);
             compute.SetVector("gravity", m_fluidSimulationConfig.Gravity);
-            compute.SetFloat("fluidDensityThreshold", m_fluidSimulationConfig.FluidDensityThreshold);
-            compute.SetFloat("pressureRelaxation", m_fluidSimulationConfig.PressureRelaxation);
-            compute.SetFloat("boundaryFriction", m_fluidSimulationConfig.BoundaryFriction);
+            // compute.SetFloat("fluidDensityThreshold", m_fluidSimulationConfig.FluidDensityThreshold);
+            // compute.SetFloat("pressureRelaxation", m_fluidSimulationConfig.PressureRelaxation);
+            // compute.SetFloat("boundaryFriction", m_fluidSimulationConfig.BoundaryFriction);
             compute.SetFloat("dampingFactor", m_fluidSimulationConfig.DampingFactor);
-            compute.SetFloat("minFluidDensity", m_fluidSimulationConfig.MinFluidDensity);
-            compute.SetBool("enableNoSlipBoundaries", m_fluidSimulationConfig.EnableNoSlipBoundaries);
+            // compute.SetFloat("minFluidDensity", m_fluidSimulationConfig.MinFluidDensity);
+            // compute.SetBool("enableNoSlipBoundaries", m_fluidSimulationConfig.EnableNoSlipBoundaries);
 
             // Apply shared voxel volume parameters
             int3 numberOfVoxels = VoxelVolumeConfig.NumberOfVoxels;

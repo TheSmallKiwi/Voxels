@@ -197,31 +197,6 @@ namespace Tuntenfisch.World
             }
         }
 
-        // Add fluid source to a specific chunk by coordinate
-        public void AddFluidSourceToChunk(int3 chunkCoordinate, float3 localPosition, float3 velocity, float radius,
-            float amount, MaterialIndex fluidMaterial = MaterialIndex.Water)
-        {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null)
-            {
-                Debug.LogWarning("Fluid simulation is not available. Cannot add fluid source.");
-                return;
-            }
-
-            if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
-            {
-                // Convert local position to world position
-                float3 chunkWorldPosition = chunkCoordinate * m_chunkDimensions;
-                float3 worldPosition = chunkWorldPosition + localPosition;
-
-                chunk.AddFluidSource(worldPosition, velocity, radius, amount, fluidMaterial);
-                Debug.Log($"Added fluid source to chunk {chunkCoordinate} at local position {localPosition}");
-            }
-            else
-            {
-                Debug.LogWarning($"Cannot add fluid source: chunk {chunkCoordinate} not found or not active");
-            }
-        }
-
         // Get active chunks for debugging
         public Dictionary<int3, Chunk> GetActiveChunks()
         {

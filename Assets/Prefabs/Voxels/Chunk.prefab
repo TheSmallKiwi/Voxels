@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 7289832961008975112}
   - component: {fileID: 6060635717298198347}
   m_Layer: 0
-  m_Name: Fluid
+  m_Name: FluidMesh
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

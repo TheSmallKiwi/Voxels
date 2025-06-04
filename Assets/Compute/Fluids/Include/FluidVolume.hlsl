@@ -97,10 +97,7 @@ float3 CalculateSDFGradient(uint3 coordinate, float centerSDF)
 FluidVoxel SampleFluidVoxelTrilinear(float3 position)
 {
     // Convert world position to voxel space
-    float3 voxelPos = WorldToFluidVolumeSpace(position) / voxelSpacing + 0.5f * (numberOfVoxels - 1.0f);
-    
-    // Clamp to valid range
-    voxelPos = clamp(voxelPos, 0.0f, float3(numberOfVoxels - 2));
+    float3 voxelPos = WorldToFluidVolumeSpace(position) / voxelSpacing + 0.5f * (numberOfVoxels - 1);
     
     // Get base coordinate and fractional part
     uint3 baseCoord = uint3(floor(voxelPos));

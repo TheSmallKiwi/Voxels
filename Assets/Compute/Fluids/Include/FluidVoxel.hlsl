@@ -10,14 +10,14 @@ struct FluidVoxel
     float pressure;
     float temperature;
 
-    bool IsFluid()
+    uint IsFluid()
     {
-        return voxel.GetValue() < 0.0f && voxel.materialIndex >= fluidMaterialStartIndex;
+        return (voxel.GetValue() < 0.0f && voxel.materialIndex >= fluidMaterialStartIndex);
     }
 
-    bool IsSolid()
+    uint IsSolid()
     {
-        return voxel.GetValue() < 0.0f && voxel.materialIndex < fluidMaterialStartIndex;
+        return (voxel.GetValue() < 0.0f && voxel.materialIndex < fluidMaterialStartIndex);
     }
 
     static FluidVoxel Create()
