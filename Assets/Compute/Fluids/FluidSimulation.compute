@@ -1,684 +1,499 @@
-#pragma kernel InitializeFluidVolume
+#pragma kernel InitializeFluid
+#pragma kernel AddSources
 #pragma kernel Advection
-#pragma kernel AdvectionDebug
-#pragma kernel ExternalForces
-#pragma kernel ExternalForcesDebug
+#pragma kernel Diffusion
 #pragma kernel ComputeDivergence
-#pragma kernel ComputeDivergenceFixed
+#pragma kernel PressureSolve
 #pragma kernel PressureProjection
-#pragma kernel ApplyBoundaryConditions
-#pragma kernel ApplyBoundaryConditionsGentle
-#pragma kernel AddFluidSource
+#pragma kernel ApplyBoundaries
 #pragma kernel UpdateBoundariesFromSolids
-#pragma kernel ConvertFluidToVoxelVolume
 
-#include "Assets/Compute/Fluids/Include/FluidVolume.hlsl"
+// Fluid simulation textures (double buffered)
+RWTexture3D<float3> velocityRead;
+RWTexture3D<float3> velocityWrite;
+RWTexture3D<float> densityRead;
+RWTexture3D<float> densityWrite;
+RWTexture3D<float> pressureRead;
+RWTexture3D<float> pressureWrite;
+RWTexture3D<float> divergence;
 
-// Additional buffers
-RWStructuredBuffer<float> divergenceBuffer;
-RWStructuredBuffer<PackedVoxel> outputVoxelVolume;
+// Solid terrain data (from existing voxel system)
+StructuredBuffer<PackedVoxel> solidVoxelVolume;
 
 // Simulation parameters
+uint3 dimensions;
+float voxelSize;
 float deltaTime;
 float viscosity;
 float3 gravity;
-float dampingFactor;
+float densityDissipation;
+float velocityDissipation;
 
-// Fluid source parameters
-uint sourceMaterial;
+// Source parameters
 float3 sourcePosition;
 float3 sourceVelocity;
-float sourceAmount;
 float sourceRadius;
+float sourceDensity;
 
+// Include voxel unpacking from existing system
+#include "Assets/Compute/Voxels/Include/Voxel.hlsl"
 
-[numthreads(4, 4, 4)]
-void InitializeFluidVolume(uint3 id : SV_DispatchThreadID)
+// Utility functions
+bool IsValidCoord(uint3 coord)
 {
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
+    return all(coord < dimensions);
+}
 
-    // Initialize with empty fluid voxel
-    FluidVoxel voxel;
+uint CalculateVoxelVolumeIndex(uint3 coordinate)
+{
+    return dot(coordinate, uint3(1, dimensions.x, dimensions.x * dimensions.y));
+}
 
-    // Start with empty space (negative SDF)
-    voxel.voxel = Voxel::Create(float4(1.0f, 0, 1, 0), 0);
-    voxel.velocity = float3(0, 0, 0);
-    voxel.pressure = 0.0f;
-    voxel.temperature = 0.0f;
+float3 CoordToWorldPos(uint3 coord)
+{
+    return (float3(coord) - float3(dimensions) * 0.5) * voxelSize;
+}
 
-    SetFluidVoxel(id, voxel);
+uint3 WorldPosToCoord(float3 worldPos)
+{
+    float3 coordFloat = worldPos / voxelSize + float3(dimensions) * 0.5;
+    return uint3(clamp(coordFloat, 0.0, float3(dimensions - 1)));
+}
+
+bool IsSolidAtCoord(uint3 coord)
+{
+    if (!IsValidCoord(coord))
+        return true; // Treat out-of-bounds as solid
+        
+    uint solidIndex = CalculateVoxelVolumeIndex(coord);
+    Voxel solidVoxel = UnpackVoxel(solidVoxelVolume[solidIndex]);
+    return solidVoxel.IsSolid(); // SDF < 0
+}
+
+// Get solid surface normal at coordinate
+float3 GetSolidNormal(uint3 coord)
+{
+    if (!IsValidCoord(coord))
+        return float3(0, 1, 0);
+        
+    uint solidIndex = CalculateVoxelVolumeIndex(coord);
+    Voxel solidVoxel = UnpackVoxel(solidVoxelVolume[solidIndex]);
+    return normalize(solidVoxel.GetGradient());
+}
+
+// Enhanced trilinear sampling with solid collision detection
+float3 SampleVelocity(float3 worldPos)
+{
+    uint3 coord = WorldPosToCoord(worldPos);
+    
+    // If sampling inside solid, return zero velocity
+    if (IsSolidAtCoord(coord))
+        return float3(0, 0, 0);
+    
+    float3 coordFloat = worldPos / voxelSize + float3(dimensions) * 0.5;
+    coordFloat = clamp(coordFloat, 0.0, float3(dimensions - 1));
+    
+    uint3 coord0 = uint3(floor(coordFloat));
+    uint3 coord1 = min(coord0 + 1, dimensions - 1);
+    float3 t = frac(coordFloat);
+    
+    // Sample 8 corners, but zero out any that are inside solids
+    float3 v000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord0.y, coord0.z)];
+    float3 v100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord0.y, coord0.z)];
+    float3 v010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord1.y, coord0.z)];
+    float3 v110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord1.y, coord0.z)];
+    float3 v001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord0.y, coord1.z)];
+    float3 v101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord0.y, coord1.z)];
+    float3 v011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord1.y, coord1.z)];
+    float3 v111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord1.y, coord1.z)];
+    
+    // Trilinear interpolation
+    float3 v00 = lerp(v000, v100, t.x);
+    float3 v10 = lerp(v010, v110, t.x);
+    float3 v01 = lerp(v001, v101, t.x);
+    float3 v11 = lerp(v011, v111, t.x);
+    
+    float3 v0 = lerp(v00, v10, t.y);
+    float3 v1 = lerp(v01, v11, t.y);
+    
+    return lerp(v0, v1, t.z);
+}
+
+float SampleDensity(float3 worldPos)
+{
+    uint3 coord = WorldPosToCoord(worldPos);
+    
+    // If sampling inside solid, return zero density
+    if (IsSolidAtCoord(coord))
+        return 0.0;
+    
+    float3 coordFloat = worldPos / voxelSize + float3(dimensions) * 0.5;
+    coordFloat = clamp(coordFloat, 0.0, float3(dimensions - 1));
+    
+    uint3 coord0 = uint3(floor(coordFloat));
+    uint3 coord1 = min(coord0 + 1, dimensions - 1);
+    float3 t = frac(coordFloat);
+    
+    // Sample 8 corners, but zero out any that are inside solids
+    float d000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z)) ? 0.0 : densityRead[uint3(coord0.x, coord0.y, coord0.z)];
+    float d100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z)) ? 0.0 : densityRead[uint3(coord1.x, coord0.y, coord0.z)];
+    float d010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z)) ? 0.0 : densityRead[uint3(coord0.x, coord1.y, coord0.z)];
+    float d110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z)) ? 0.0 : densityRead[uint3(coord1.x, coord1.y, coord0.z)];
+    float d001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z)) ? 0.0 : densityRead[uint3(coord0.x, coord0.y, coord1.z)];
+    float d101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z)) ? 0.0 : densityRead[uint3(coord1.x, coord0.y, coord1.z)];
+    float d011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z)) ? 0.0 : densityRead[uint3(coord0.x, coord1.y, coord1.z)];
+    float d111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z)) ? 0.0 : densityRead[uint3(coord1.x, coord1.y, coord1.z)];
+    
+    // Trilinear interpolation
+    float d00 = lerp(d000, d100, t.x);
+    float d10 = lerp(d010, d110, t.x);
+    float d01 = lerp(d001, d101, t.x);
+    float d11 = lerp(d011, d111, t.x);
+    
+    float d0 = lerp(d00, d10, t.y);
+    float d1 = lerp(d01, d11, t.y);
+    
+    return lerp(d0, d1, t.z);
 }
 
 [numthreads(4, 4, 4)]
-void AddFluidSource(uint3 id : SV_DispatchThreadID)
+void InitializeFluid(uint3 id : SV_DispatchThreadID)
 {
-    if (IsOutOfFluidVolumeBounds(id))
+    if (!IsValidCoord(id))
         return;
-
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip if this is a solid boundary
-    if (fVoxel.IsSolid())
-        return;
-
-    // Calculate distance from source position
-    float3 voxelWorldPos = FluidVolumeToWorldSpace(FluidVoxelToVolumeSpace(id));
-    float distance = length(voxelWorldPos - sourcePosition);
-
-    float fluidLevel = fVoxel.voxel.GetValue();
-
-    // Add fluid within source radius using smooth falloff
-    if (distance < sourceRadius)
+        
+    if (IsSolidAtCoord(id))
     {
-        // Directly modify SDF
-        float falloff = 1.0f - smoothstep(0.0f, sourceRadius, distance);
-        fluidLevel -= sourceAmount * falloff;
-        fVoxel.voxel.SetValue(fluidLevel);
-
-        // Blend velocity towards source velocity
-        if (fluidLevel < 0.0f)
-        {
-            float velocityBlend = falloff * deltaTime * 2.0f;
-            fVoxel.velocity = lerp(fVoxel.velocity, sourceVelocity, min(velocityBlend, 1.0f));
-
-            // Set fluid material and proper SDF
-            fVoxel.voxel.materialIndex = sourceMaterial;
-
-            // Calculate surface normal from density gradient
-            float3 gradient = CalculateSDFGradient(id, fluidLevel);
-            if (length(gradient) > 0.001f)
-            {
-                fVoxel.voxel.SetGradient(normalize(gradient));
-            }
-            else
-            {
-                fVoxel.voxel.SetGradient(float3(0, 1, 0));
-            }
-        }
+        velocityWrite[id] = float3(0, 0, 0);
+        densityWrite[id] = 0.0;
+        pressureWrite[id] = 0.0;
     }
-
-    SetFluidVoxel(id, fVoxel);
-}
-
-[numthreads(4, 4, 4)]
-void Advection(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip solid voxels (terrain)
-    if (fVoxel.IsSolid() || !fVoxel.IsFluid())
+    else
     {
-        SetFluidVoxel(id, fVoxel);
-        return;
+        velocityWrite[id] = float3(0, 0, 0);
+        densityWrite[id] = 0.0;
+        pressureWrite[id] = 0.0;
     }
-
-    // Semi-Lagrangian advection
-    float3 voxelPos = FluidVoxelToVolumeSpace(id);
-    float3 worldPos = FluidVolumeToWorldSpace(voxelPos);
-
-    // Trace backwards through velocity field
-    float3 prevWorldPos = worldPos - fVoxel.velocity * deltaTime;
-
-    // Sample at previous position
-    FluidVoxel sampledVoxel = SampleFluidVoxelTrilinear(prevWorldPos);
-
-    // Create advected voxel
-    FluidVoxel newVoxel = FluidVoxel::Create();
-
-    // Advect SDF value directly
-    newVoxel.voxel.valueAndGradient.x = sampledVoxel.voxel.valueAndGradient.x;
-
-    // Advect velocity (with damping)
-    newVoxel.velocity = sampledVoxel.velocity * dampingFactor;
-
-    // Advect other properties
-    newVoxel.temperature = sampledVoxel.temperature;
-    newVoxel.pressure = fVoxel.pressure; // Keep current pressure (will be recalculated)
-
-    // Maintain material index
-    newVoxel.voxel.materialIndex = sampledVoxel.voxel.materialIndex;
-
-    // Recalculate gradient (surface normal) for the advected SDF
-    float3 gradient = CalculateSDFGradient(id, newVoxel.voxel.valueAndGradient.x);
-    newVoxel.voxel.valueAndGradient.yzw = gradient;
-
-    SetFluidVoxel(id, newVoxel);
-}
-
-[numthreads(4, 4, 4)]
-void ExternalForces(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Only apply forces to fluid voxels
-    if (fVoxel.IsFluid())
-    {
-        // Apply gravity - this is crucial for proper flow
-        fVoxel.velocity += gravity * deltaTime;
-
-        // Apply viscosity damping
-        fVoxel.velocity *= (1.0f - viscosity * deltaTime);
-
-        // Ensure velocity doesn't become too extreme
-        float maxVelocity = 50.0f; // Adjust based on voxel spacing
-        float velocityMagnitude = length(fVoxel.velocity);
-        if (velocityMagnitude > maxVelocity)
-        {
-            fVoxel.velocity = (fVoxel.velocity / velocityMagnitude) * maxVelocity;
-        }
-    }
-
-    SetFluidVoxel(id, fVoxel);
-}
-
-[numthreads(4, 4, 4)]
-void ComputeDivergence(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    uint index = CalculateFluidVolumeIndex(id);
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip non-fluid voxels
-    if (!fVoxel.IsFluid())
-    {
-        divergenceBuffer[index] = 0.0f;
-        return;
-    }
-
-    // Compute divergence using central differences
-    float divergence = 0.0f;
-
-    // X-axis
-    if (id.x > 0 && id.x < numberOfVoxels.x - 1)
-    {
-        FluidVoxel voxelXMinus = GetFluidVoxel(id - uint3(1, 0, 0));
-        FluidVoxel voxelXPlus = GetFluidVoxel(id + uint3(1, 0, 0));
-
-        float velXMinus = voxelXMinus.IsFluid() ? voxelXMinus.velocity.x : 0.0f;
-        float velXPlus = voxelXPlus.IsFluid() ? voxelXPlus.velocity.x : 0.0f;
-
-        divergence += (velXPlus - velXMinus) / (2.0f * voxelSpacing);
-    }
-
-    // Y-axis
-    if (id.y > 0 && id.y < numberOfVoxels.y - 1)
-    {
-        FluidVoxel voxelYMinus = GetFluidVoxel(id - uint3(0, 1, 0));
-        FluidVoxel voxelYPlus = GetFluidVoxel(id + uint3(0, 1, 0));
-
-        float velYMinus = (voxelYMinus.IsFluid())
-                              ? voxelYMinus.velocity.y
-                              : 0.0f;
-        float velYPlus = (voxelYPlus.IsFluid()) ? voxelYPlus.velocity.y : 0.0f;
-
-        divergence += (velYPlus - velYMinus) / (2.0f * voxelSpacing);
-    }
-
-    // Z-axis
-    if (id.z > 0 && id.z < numberOfVoxels.z - 1)
-    {
-        FluidVoxel voxelZMinus = GetFluidVoxel(id - uint3(0, 0, 1));
-        FluidVoxel voxelZPlus = GetFluidVoxel(id + uint3(0, 0, 1));
-
-        float velZMinus = (voxelZMinus.IsFluid())
-                              ? voxelZMinus.velocity.z
-                              : 0.0f;
-        float velZPlus = (voxelZPlus.IsFluid()) ? voxelZPlus.velocity.z : 0.0f;
-
-        divergence += (velZPlus - velZMinus) / (2.0f * voxelSpacing);
-    }
-
-    divergenceBuffer[index] = divergence;
-}
-
-[numthreads(4, 4, 4)]
-void PressureProjection(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    uint index = CalculateFluidVolumeIndex(id);
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip non-fluid voxels
-    if (!fVoxel.IsFluid())
-    {
-        fVoxel.pressure = 0.0f;
-        SetFluidVoxel(id, fVoxel);
-        return;
-    }
-
-    // Jacobi iteration for pressure solve
-    float pressureSum = 0.0f;
-    int neighborCount = 0;
-
-    // Sample neighboring pressures
-    int3 offsets[6] = {
-        int3(-1, 0, 0), int3(1, 0, 0),
-        int3(0, -1, 0), int3(0, 1, 0),
-        int3(0, 0, -1), int3(0, 0, 1)
-    };
-
-    for (int i = 0; i < 6; i++)
-    {
-        int3 neighborCoord = int3(id) + offsets[i];
-
-        // Check bounds
-        if (any(neighborCoord < 0) || any(neighborCoord >= int3(numberOfVoxels)))
-            continue;
-
-        FluidVoxel neighbor = GetFluidVoxel(uint3(neighborCoord));
-        if (neighbor.IsFluid())
-        {
-            pressureSum += neighbor.pressure;
-            neighborCount++;
-        }
-    }
-
-    // Update pressure based on divergence
-    if (neighborCount > 0)
-    {
-        float divergence = divergenceBuffer[index];
-        float alpha = -voxelSpacing * voxelSpacing;
-        float beta = 6.0f; // For 3D grid
-
-        fVoxel.pressure = (alpha * divergence + pressureSum) / beta;
-    }
-
-    // Update velocity based on pressure gradient
-    float3 pressureGradient = 0.0f;
-
-    // Calculate pressure gradient using central differences
-    for (int j = 0; j < 6; j++)
-    {
-        int3 neighborCoord = int3(id) + offsets[j];
-
-        if (any(neighborCoord < 0) || any(neighborCoord >= int3(numberOfVoxels)))
-            continue;
-
-        FluidVoxel neighbor = GetFluidVoxel(uint3(neighborCoord));
-        float neighborPressure = neighbor.IsFluid()
-                                     ? neighbor.pressure
-                                     : fVoxel.pressure;
-
-        // Add to gradient based on direction
-        if (j < 2) // X direction
-        {
-            float sign = (j == 0) ? -1.0f : 1.0f;
-            pressureGradient.x += sign * neighborPressure / (2.0f * voxelSpacing);
-        }
-        else if (j < 4) // Y direction
-        {
-            float sign = (j == 2) ? -1.0f : 1.0f;
-            pressureGradient.y += sign * neighborPressure / (2.0f * voxelSpacing);
-        }
-        else // Z direction
-        {
-            float sign = (j == 4) ? -1.0f : 1.0f;
-            pressureGradient.z += sign * neighborPressure / (2.0f * voxelSpacing);
-        }
-    }
-
-    // Subtract pressure gradient from velocity
-    fVoxel.velocity -= pressureGradient * deltaTime;
-
-    SetFluidVoxel(id, fVoxel);
-}
-
-[numthreads(4, 4, 4)]
-void ApplyBoundaryConditions(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel voxel = GetFluidVoxel(id);
-
-    // Apply volume boundary conditions
-    bool atBoundary = (id.x == 0 || id.x == numberOfVoxels.x - 1 ||
-        id.y == 0 || id.y == numberOfVoxels.y - 1 ||
-        id.z == 0 || id.z == numberOfVoxels.z - 1);
-
-    if (atBoundary && voxel.IsFluid())
-    {
-        // Apply no-slip conditions at volume boundaries
-        if (id.x == 0 || id.x == numberOfVoxels.x - 1)
-            voxel.velocity.x = 0.0f;
-        if (id.y == 0)
-            voxel.velocity.y = max(0.0f, voxel.velocity.y); // Allow flow up but not down through bottom
-        if (id.y == numberOfVoxels.y - 1)
-            voxel.velocity.y = min(0.0f, voxel.velocity.y); // Allow flow down but not up through top
-        if (id.z == 0 || id.z == numberOfVoxels.z - 1)
-            voxel.velocity.z = 0.0f;
-    }
-
-    // Apply no-slip boundary conditions at solid interfaces
-    if (voxel.IsFluid())
-    {
-        int3 offsets[6] = {
-            int3(-1, 0, 0), int3(1, 0, 0),
-            int3(0, -1, 0), int3(0, 1, 0),
-            int3(0, 0, -1), int3(0, 0, 1)
-        };
-
-        for (int i = 0; i < 6; i++)
-        {
-            int3 neighborCoord = int3(id) + offsets[i];
-
-            if (any(neighborCoord < 0) || any(neighborCoord >= int3(numberOfVoxels)))
-                continue;
-
-            FluidVoxel neighbor = GetFluidVoxel(uint3(neighborCoord));
-            if (neighbor.IsSolid())
-            {
-                // Apply friction at solid boundaries
-                float friction = 0.8f;
-
-                if (i < 2) // X direction
-                    voxel.velocity.x *= friction;
-                else if (i < 4) // Y direction
-                    voxel.velocity.y *= friction;
-                else // Z direction
-                    voxel.velocity.z *= friction;
-            }
-        }
-    }
-
-    SetFluidVoxel(id, voxel);
 }
 
 [numthreads(4, 4, 4)]
 void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
 {
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    // Read solid voxel data from the main voxel volume
-    Voxel solidVoxel = GetVoxel(id);
-    FluidVoxel fluidVoxel = GetFluidVoxel(id);
-
-    // Update fluid boundaries based on solid geometry
-    if (solidVoxel.GetValue() < 0.0f)
-    {
-        fluidVoxel.voxel = solidVoxel;
-        fluidVoxel.velocity = float3(0, 0, 0);
-        fluidVoxel.pressure = 0.0f;
-        fluidVoxel.temperature = 0.0f;
-    }
-
-    SetFluidVoxel(id, fluidVoxel);
-}
-
-[numthreads(4, 4, 4)]
-void ConvertFluidToVoxelVolume(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
+    if (!IsValidCoord(id))
         return;
         
-    FluidVoxel fluidVoxel = GetFluidVoxel(id);
-    Voxel outputVoxel;
-    
-    if (fluidVoxel.IsFluid())
-        outputVoxel = fluidVoxel.voxel;
-    else
-        outputVoxel = Voxel::Create(float4(1.0f, 0.0f, 1.0f, 0.0f), 0);
-
-    outputVoxelVolume[CalculateFluidVolumeIndex(id)] = PackVoxel(outputVoxel);   
-}
-
-// Add these debug versions to your FluidSimulation.compute file
-
-// Debug version of Advection that prevents sampling outside bounds
-[numthreads(4, 4, 4)]
-void AdvectionDebug(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip solid voxels
-    if (fVoxel.IsSolid() || !fVoxel.IsFluid())
+    if (IsSolidAtCoord(id))
     {
-        SetFluidVoxel(id, fVoxel);
-        return;
-    }
-
-    // Store original SDF value for debugging
-    float originalSDF = fVoxel.voxel.GetValue();
-
-    // Semi-Lagrangian advection with bounds checking
-    float3 voxelPos = FluidVoxelToVolumeSpace(id);
-    float3 worldPos = FluidVolumeToWorldSpace(voxelPos);
-
-    // Limit velocity to prevent excessive backward tracing
-    float3 clampedVelocity = fVoxel.velocity;
-    float maxVelocity = voxelSpacing * 2.0f / deltaTime; // Max 2 voxels per timestep
-    float velocityMag = length(clampedVelocity);
-    if (velocityMag > maxVelocity)
-    {
-        clampedVelocity = (clampedVelocity / velocityMag) * maxVelocity;
-    }
-
-    // Trace backwards through velocity field
-    float3 prevWorldPos = worldPos - clampedVelocity * deltaTime;
-    
-    // Check if previous position is within bounds
-    float3 prevVoxelPos = WorldToFluidVolumeSpace(prevWorldPos) / voxelSpacing + 0.5f * (numberOfVoxels - 1.0f);
-    
-    FluidVoxel newVoxel;
-    
-    // If outside bounds, keep current values
-    if (any(prevVoxelPos < 0.0f) || any(prevVoxelPos >= float3(numberOfVoxels - 1)))
-    {
-        newVoxel = fVoxel;
-        newVoxel.velocity *= dampingFactor; // Still apply damping
+        // Zero out fluid properties inside solid regions
+        velocityWrite[id] = float3(0, 0, 0);
+        densityWrite[id] = 0.0;
+        pressureWrite[id] = 0.0;
     }
     else
     {
-        // Sample at previous position
-        FluidVoxel sampledVoxel = SampleFluidVoxelTrilinear(prevWorldPos);
+        // Preserve existing fluid properties in non-solid regions
+        velocityWrite[id] = velocityRead[id];
+        densityWrite[id] = densityRead[id];
+        pressureWrite[id] = pressureRead[id];
+    }
+}
+
+[numthreads(4, 4, 4)]
+void AddSources(uint3 id : SV_DispatchThreadID)
+{
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+        return;
         
-        // Create advected voxel
-        newVoxel = FluidVoxel::Create();
+    float3 worldPos = CoordToWorldPos(id);
+    float distance = length(worldPos - sourcePosition);
+    
+    if (distance < sourceRadius)
+    {
+        float falloff = 1.0 - smoothstep(0.0, sourceRadius, distance);
+        float3 currentVel = velocityRead[id];
+        float currentDensity = densityRead[id];
         
-        // Advect SDF value
-        newVoxel.voxel.valueAndGradient.x = sampledVoxel.voxel.valueAndGradient.x;
+        // Add velocity and density
+        velocityWrite[id] = currentVel + sourceVelocity * falloff * deltaTime;
+        densityWrite[id] = min(1.0, currentDensity + sourceDensity * falloff * deltaTime);
+    }
+    else
+    {
+        velocityWrite[id] = velocityRead[id];
+        densityWrite[id] = densityRead[id];
+    }
+}
+
+[numthreads(4, 4, 4)]
+void Advection(uint3 id : SV_DispatchThreadID)
+{
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+        return;
         
-        // Only advect if sampled voxel is also fluid
-        if (sampledVoxel.IsFluid())
+    float3 worldPos = CoordToWorldPos(id);
+    float3 velocity = velocityRead[id];
+    
+    // Semi-Lagrangian advection with collision detection
+    float3 targetPos = worldPos - velocity * deltaTime;
+    
+    // Simple collision detection along advection path
+    float3 direction = normalize(targetPos - worldPos);
+    float distance = length(targetPos - worldPos);
+    
+    // Step along path and check for solid collisions
+    float stepSize = voxelSize * 0.5;
+    for (float t = stepSize; t < distance; t += stepSize)
+    {
+        float3 samplePos = worldPos + direction * t;
+        uint3 sampleCoord = WorldPosToCoord(samplePos);
+        
+        if (IsSolidAtCoord(sampleCoord))
         {
-            newVoxel.velocity = sampledVoxel.velocity * dampingFactor;
-            newVoxel.temperature = sampledVoxel.temperature;
-            newVoxel.voxel.materialIndex = sampledVoxel.voxel.materialIndex;
+            // Hit solid, adjust target position
+            targetPos = worldPos + direction * max(0.0, t - stepSize);
+            break;
         }
-        else
-        {
-            // If we sampled non-fluid, preserve current fluid but reduce velocity
-            newVoxel.voxel = fVoxel.voxel;
-            newVoxel.velocity = fVoxel.velocity * 0.5f;
-            newVoxel.temperature = fVoxel.temperature;
-        }
-        
-        newVoxel.pressure = 0.0f; // Reset pressure (will be recalculated)
     }
     
-    // Recalculate gradient
-    float3 gradient = CalculateSDFGradient(id, newVoxel.voxel.valueAndGradient.x);
-    newVoxel.voxel.valueAndGradient.yzw = gradient;
-
-    SetFluidVoxel(id, newVoxel);
+    // Sample at (possibly adjusted) target position
+    float3 advectedVelocity = SampleVelocity(targetPos);
+    float advectedDensity = SampleDensity(targetPos);
+    
+    // Apply dissipation
+    velocityWrite[id] = advectedVelocity * velocityDissipation;
+    densityWrite[id] = advectedDensity * densityDissipation;
 }
 
-// Fixed divergence computation
 [numthreads(4, 4, 4)]
-void ComputeDivergenceFixed(uint3 id : SV_DispatchThreadID)
+void Diffusion(uint3 id : SV_DispatchThreadID)
 {
-    if (IsOutOfFluidVolumeBounds(id))
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
         return;
-
-    uint index = CalculateFluidVolumeIndex(id);
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Skip non-fluid voxels
-    if (!fVoxel.IsFluid())
-    {
-        divergenceBuffer[index] = 0.0f;
-        return;
-    }
-
-    // Compute divergence of velocity field only
-    float divergence = 0.0f;
-
-    // X-axis
-    if (id.x > 0 && id.x < numberOfVoxels.x - 1)
-    {
-        FluidVoxel voxelXMinus = GetFluidVoxel(id - uint3(1, 0, 0));
-        FluidVoxel voxelXPlus = GetFluidVoxel(id + uint3(1, 0, 0));
-
-        // Use one-sided differences at boundaries
-        float velXMinus = (voxelXMinus.IsFluid() || voxelXMinus.IsSolid()) ? voxelXMinus.velocity.x : fVoxel.velocity.x;
-        float velXPlus = (voxelXPlus.IsFluid() || voxelXPlus.IsSolid()) ? voxelXPlus.velocity.x : fVoxel.velocity.x;
-
-        divergence += (velXPlus - velXMinus) / (2.0f * voxelSpacing);
-    }
-
-    // Y-axis
-    if (id.y > 0 && id.y < numberOfVoxels.y - 1)
-    {
-        FluidVoxel voxelYMinus = GetFluidVoxel(id - uint3(0, 1, 0));
-        FluidVoxel voxelYPlus = GetFluidVoxel(id + uint3(0, 1, 0));
-
-        float velYMinus = (voxelYMinus.IsFluid() || voxelYMinus.IsSolid()) ? voxelYMinus.velocity.y : fVoxel.velocity.y;
-        float velYPlus = (voxelYPlus.IsFluid() || voxelYPlus.IsSolid()) ? voxelYPlus.velocity.y : fVoxel.velocity.y;
-
-        divergence += (velYPlus - velYMinus) / (2.0f * voxelSpacing);
-    }
-
-    // Z-axis
-    if (id.z > 0 && id.z < numberOfVoxels.z - 1)
-    {
-        FluidVoxel voxelZMinus = GetFluidVoxel(id - uint3(0, 0, 1));
-        FluidVoxel voxelZPlus = GetFluidVoxel(id + uint3(0, 0, 1));
-
-        float velZMinus = (voxelZMinus.IsFluid() || voxelZMinus.IsSolid()) ? voxelZMinus.velocity.z : fVoxel.velocity.z;
-        float velZPlus = (voxelZPlus.IsFluid() || voxelZPlus.IsSolid()) ? voxelZPlus.velocity.z : fVoxel.velocity.z;
-
-        divergence += (velZPlus - velZMinus) / (2.0f * voxelSpacing);
-    }
-
-    divergenceBuffer[index] = divergence;
-}
-
-// Gentler boundary conditions
-[numthreads(4, 4, 4)]
-void ApplyBoundaryConditionsGentle(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel voxel = GetFluidVoxel(id);
-
-    // Only apply boundary conditions to fluid voxels
-    if (!voxel.IsFluid())
-    {
-        SetFluidVoxel(id, voxel);
-        return;
-    }
-
-    // Check if at volume boundary
-    bool atBoundary = (id.x == 0 || id.x == numberOfVoxels.x - 1 ||
-                       id.y == 0 || id.y == numberOfVoxels.y - 1 ||
-                       id.z == 0 || id.z == numberOfVoxels.z - 1);
-
-    if (atBoundary)
-    {
-        // Only zero out normal component of velocity at boundaries
-        if (id.x == 0 || id.x == numberOfVoxels.x - 1)
-            voxel.velocity.x *= 0.1f; // Allow some slip
-        if (id.y == 0)
-            voxel.velocity.y = max(0.0f, voxel.velocity.y); // No flow through bottom
-        if (id.y == numberOfVoxels.y - 1)
-            voxel.velocity.y = min(0.0f, voxel.velocity.y); // No flow through top
-        if (id.z == 0 || id.z == numberOfVoxels.z - 1)
-            voxel.velocity.z *= 0.1f; // Allow some slip
-    }
-
-    // Check for solid neighbors and apply friction
+        
+    float3 currentVel = velocityRead[id];
+    float3 neighborSum = float3(0, 0, 0);
+    int neighborCount = 0;
+    
+    // Sample 6 neighbors
     int3 offsets[6] = {
         int3(-1, 0, 0), int3(1, 0, 0),
         int3(0, -1, 0), int3(0, 1, 0),
         int3(0, 0, -1), int3(0, 0, 1)
     };
-
+    
     for (int i = 0; i < 6; i++)
     {
-        int3 neighborCoord = int3(id) + offsets[i];
-
-        if (any(neighborCoord < 0) || any(neighborCoord >= int3(numberOfVoxels)))
-            continue;
-
-        FluidVoxel neighbor = GetFluidVoxel(uint3(neighborCoord));
-        if (neighbor.IsSolid())
+        uint3 neighborCoord = uint3(int3(id) + offsets[i]);
+        
+        if (IsValidCoord(neighborCoord) && !IsSolidAtCoord(neighborCoord))
         {
-            // Apply gentler friction at solid boundaries
-            float friction = 0.9f; // Higher = less friction
-
-            if (i < 2) // X direction
-                voxel.velocity.x *= friction;
-            else if (i < 4) // Y direction
-                voxel.velocity.y *= friction;
-            else // Z direction
-                voxel.velocity.z *= friction;
+            neighborSum += velocityRead[neighborCoord];
+            neighborCount++;
         }
     }
-
-    SetFluidVoxel(id, voxel);
-}
-
-// Debug external forces - gentler gravity
-[numthreads(4, 4, 4)]
-void ExternalForcesDebug(uint3 id : SV_DispatchThreadID)
-{
-    if (IsOutOfFluidVolumeBounds(id))
-        return;
-
-    FluidVoxel fVoxel = GetFluidVoxel(id);
-
-    // Only apply forces to fluid voxels
-    if (fVoxel.IsFluid())
+    
+    if (neighborCount > 0)
     {
-        // Store original velocity for debugging
-        float3 originalVelocity = fVoxel.velocity;
-        
-        // Apply reduced gravity for testing
-        fVoxel.velocity += gravity * deltaTime * 0.1f; // 10% of normal gravity
-        
-        // Apply gentler viscosity damping
-        fVoxel.velocity *= (1.0f - viscosity * deltaTime * 0.1f);
-
-        // Clamp velocity more conservatively
-        float maxVelocity = 10.0f; // Reduced from 50
-        float velocityMagnitude = length(fVoxel.velocity);
-        if (velocityMagnitude > maxVelocity)
-        {
-            fVoxel.velocity = (fVoxel.velocity / velocityMagnitude) * maxVelocity;
-        }
+        float3 averageVel = neighborSum / float(neighborCount);
+        float diffusionRate = viscosity * deltaTime;
+        velocityWrite[id] = lerp(currentVel, averageVel, diffusionRate);
     }
-
-    SetFluidVoxel(id, fVoxel);
+    else
+    {
+        velocityWrite[id] = currentVel;
+    }
+    
+    // Copy density unchanged
+    densityWrite[id] = densityRead[id];
 }
 
-// Helper function to check if a voxel contains fluid
-bool HasFluid(FluidVoxel voxel)
+[numthreads(4, 4, 4)]
+void ComputeDivergence(uint3 id : SV_DispatchThreadID)
 {
-    return voxel.voxel.GetValue() < 0.0f && voxel.voxel.materialIndex >= fluidMaterialStartIndex;
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+    {
+        divergence[id] = 0.0;
+        return;
+    }
+    
+    float div = 0.0;
+    
+    // Central differences for divergence calculation
+    // ∇·v = ∂vx/∂x + ∂vy/∂y + ∂vz/∂z
+    
+    // X component
+    if (id.x > 0 && id.x < dimensions.x - 1)
+    {
+        float3 velRight = !IsSolidAtCoord(uint3(id.x + 1, id.y, id.z)) ? velocityRead[uint3(id.x + 1, id.y, id.z)] : float3(0, 0, 0);
+        float3 velLeft = !IsSolidAtCoord(uint3(id.x - 1, id.y, id.z)) ? velocityRead[uint3(id.x - 1, id.y, id.z)] : float3(0, 0, 0);
+        div += (velRight.x - velLeft.x) / (2.0 * voxelSize);
+    }
+    
+    // Y component
+    if (id.y > 0 && id.y < dimensions.y - 1)
+    {
+        float3 velUp = !IsSolidAtCoord(uint3(id.x, id.y + 1, id.z)) ? velocityRead[uint3(id.x, id.y + 1, id.z)] : float3(0, 0, 0);
+        float3 velDown = !IsSolidAtCoord(uint3(id.x, id.y - 1, id.z)) ? velocityRead[uint3(id.x, id.y - 1, id.z)] : float3(0, 0, 0);
+        div += (velUp.y - velDown.y) / (2.0 * voxelSize);
+    }
+    
+    // Z component
+    if (id.z > 0 && id.z < dimensions.z - 1)
+    {
+        float3 velForward = !IsSolidAtCoord(uint3(id.x, id.y, id.z + 1)) ? velocityRead[uint3(id.x, id.y, id.z + 1)] : float3(0, 0, 0);
+        float3 velBack = !IsSolidAtCoord(uint3(id.x, id.y, id.z - 1)) ? velocityRead[uint3(id.x, id.y, id.z - 1)] : float3(0, 0, 0);
+        div += (velForward.z - velBack.z) / (2.0 * voxelSize);
+    }
+    
+    divergence[id] = div;
+}
+
+[numthreads(4, 4, 4)]
+void PressureSolve(uint3 id : SV_DispatchThreadID)
+{
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+    {
+        pressureWrite[id] = 0.0;
+        return;
+    }
+    
+    float div = divergence[id];
+    float pressureSum = 0.0;
+    int validNeighbors = 0;
+    
+    // Jacobi iteration for pressure Poisson equation
+    // ∇²p = ∇·v
+    
+    int3 offsets[6] = {
+        int3(-1, 0, 0), int3(1, 0, 0),
+        int3(0, -1, 0), int3(0, 1, 0),
+        int3(0, 0, -1), int3(0, 0, 1)
+    };
+    
+    for (int i = 0; i < 6; i++)
+    {
+        uint3 neighborCoord = uint3(int3(id) + offsets[i]);
+        
+        if (IsValidCoord(neighborCoord) && !IsSolidAtCoord(neighborCoord))
+        {
+            pressureSum += pressureRead[neighborCoord];
+            validNeighbors++;
+        }
+    }
+    
+    if (validNeighbors > 0)
+    {
+        float alpha = -voxelSize * voxelSize;
+        float beta = float(validNeighbors);
+        pressureWrite[id] = (alpha * div + pressureSum) / beta;
+    }
+    else
+    {
+        pressureWrite[id] = 0.0;
+    }
+}
+
+[numthreads(4, 4, 4)]
+void PressureProjection(uint3 id : SV_DispatchThreadID)
+{
+    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+        return;
+        
+    float3 currentVel = velocityRead[id];
+    float3 pressureGradient = float3(0, 0, 0);
+    
+    // Compute pressure gradient using central differences
+    // ∇p = (∂p/∂x, ∂p/∂y, ∂p/∂z)
+    
+    // X gradient
+    if (id.x > 0 && id.x < dimensions.x - 1)
+    {
+        float pRight = !IsSolidAtCoord(uint3(id.x + 1, id.y, id.z)) ? pressureRead[uint3(id.x + 1, id.y, id.z)] : 0.0;
+        float pLeft = !IsSolidAtCoord(uint3(id.x - 1, id.y, id.z)) ? pressureRead[uint3(id.x - 1, id.y, id.z)] : 0.0;
+        pressureGradient.x = (pRight - pLeft) / (2.0 * voxelSize);
+    }
+    
+    // Y gradient
+    if (id.y > 0 && id.y < dimensions.y - 1)
+    {
+        float pUp = !IsSolidAtCoord(uint3(id.x, id.y + 1, id.z)) ? pressureRead[uint3(id.x, id.y + 1, id.z)] : 0.0;
+        float pDown = !IsSolidAtCoord(uint3(id.x, id.y - 1, id.z)) ? pressureRead[uint3(id.x, id.y - 1, id.z)] : 0.0;
+        pressureGradient.y = (pUp - pDown) / (2.0 * voxelSize);
+    }
+    
+    // Z gradient
+    if (id.z > 0 && id.z < dimensions.z - 1)
+    {
+        float pForward = !IsSolidAtCoord(uint3(id.x, id.y, id.z + 1)) ? pressureRead[uint3(id.x, id.y, id.z + 1)] : 0.0;
+        float pBack = !IsSolidAtCoord(uint3(id.x, id.y, id.z - 1)) ? pressureRead[uint3(id.x, id.y, id.z - 1)] : 0.0;
+        pressureGradient.z = (pForward - pBack) / (2.0 * voxelSize);
+    }
+    
+    // Apply pressure gradient to make velocity field divergence-free
+    // v_new = v_old - ∇p
+    float3 newVelocity = currentVel - pressureGradient;
+    
+    // Apply external forces (gravity)
+    newVelocity += gravity * deltaTime;
+    
+    velocityWrite[id] = newVelocity;
+    densityWrite[id] = densityRead[id]; // Copy density unchanged
+}
+
+[numthreads(4, 4, 4)]
+void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
+{
+    if (!IsValidCoord(id))
+        return;
+        
+    if (IsSolidAtCoord(id))
+    {
+        // Zero velocity inside solids
+        velocityWrite[id] = float3(0, 0, 0);
+        densityWrite[id] = 0.0;
+        pressureWrite[id] = 0.0;
+        return;
+    }
+    
+    float3 velocity = velocityWrite[id];
+    
+    // Apply no-slip boundary conditions at solid interfaces
+    int3 offsets[6] = {
+        int3(-1, 0, 0), int3(1, 0, 0),
+        int3(0, -1, 0), int3(0, 1, 0),
+        int3(0, 0, -1), int3(0, 0, 1)
+    };
+    
+    for (int i = 0; i < 6; i++)
+    {
+        uint3 neighborCoord = uint3(int3(id) + offsets[i]);
+        
+        if (IsValidCoord(neighborCoord) && IsSolidAtCoord(neighborCoord))
+        {
+            // Get surface normal from solid SDF gradient
+            float3 surfaceNormal = GetSolidNormal(neighborCoord);
+            
+            // Apply no-slip boundary condition with friction
+            float velDotNormal = dot(velocity, surfaceNormal);
+            
+            if (velDotNormal > 0.0) // Moving towards solid
+            {
+                // Remove normal component and apply friction
+                velocity -= velDotNormal * surfaceNormal;
+                velocity *= 0.7; // Friction coefficient
+            }
+        }
+    }
+    
+    // Apply volume boundary conditions (walls of simulation domain)
+    if (id.x == 0 || id.x == dimensions.x - 1)
+        velocity.x = 0.0;
+    if (id.y == 0)
+        velocity.y = max(0.0, velocity.y); // Allow upward flow at bottom
+    if (id.y == dimensions.y - 1)
+        velocity.y = min(0.0, velocity.y); // Allow downward flow at top
+    if (id.z == 0 || id.z == dimensions.z - 1)
+        velocity.z = 0.0;
+    
+    velocityWrite[id] = velocity;
 }
