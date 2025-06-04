@@ -21,7 +21,7 @@ namespace Tuntenfisch.Fluids
         [SerializeField] private int m_pressureIterations = 15;
         [SerializeField] private float m_viscosity = 0.01f;
         [SerializeField] private Vector3 m_gravity = new Vector3(0, -9.81f, 0);
-        [SerializeField] private float m_densityDissipation = 0.999f;
+        [SerializeField] private float m_densityDissipation = 2f;
         [SerializeField] private float m_velocityDissipation = 0.995f;
 
         private VoxelConfig m_voxelConfig;

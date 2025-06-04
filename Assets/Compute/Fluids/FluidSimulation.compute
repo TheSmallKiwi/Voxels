@@ -69,10 +69,10 @@ bool IsSolidAtCoord(uint3 coord)
 {
     if (!IsValidCoord(coord))
         return true; // Treat out-of-bounds as solid
-        
+
     uint solidIndex = CalculateVoxelVolumeIndex(coord);
     Voxel solidVoxel = UnpackVoxel(solidVoxelVolume[solidIndex]);
-    return solidVoxel.IsSolid(); // SDF < 0
+    return solidVoxel.GetValue() < 0.0f; // SDF < 0
 }
 
 // Get solid surface normal at coordinate
@@ -80,7 +80,7 @@ float3 GetSolidNormal(uint3 coord)
 {
     if (!IsValidCoord(coord))
         return float3(0, 1, 0);
-        
+
     uint solidIndex = CalculateVoxelVolumeIndex(coord);
     Voxel solidVoxel = UnpackVoxel(solidVoxelVolume[solidIndex]);
     return normalize(solidVoxel.GetGradient());
@@ -90,74 +90,106 @@ float3 GetSolidNormal(uint3 coord)
 float3 SampleVelocity(float3 worldPos)
 {
     uint3 coord = WorldPosToCoord(worldPos);
-    
+
     // If sampling inside solid, return zero velocity
     if (IsSolidAtCoord(coord))
         return float3(0, 0, 0);
-    
+
     float3 coordFloat = worldPos / voxelSize + float3(dimensions) * 0.5;
     coordFloat = clamp(coordFloat, 0.0, float3(dimensions - 1));
-    
+
     uint3 coord0 = uint3(floor(coordFloat));
     uint3 coord1 = min(coord0 + 1, dimensions - 1);
     float3 t = frac(coordFloat);
-    
+
     // Sample 8 corners, but zero out any that are inside solids
-    float3 v000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord0.y, coord0.z)];
-    float3 v100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord0.y, coord0.z)];
-    float3 v010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord1.y, coord0.z)];
-    float3 v110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord1.y, coord0.z)];
-    float3 v001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord0.y, coord1.z)];
-    float3 v101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord0.y, coord1.z)];
-    float3 v011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord0.x, coord1.y, coord1.z)];
-    float3 v111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z)) ? float3(0,0,0) : velocityRead[uint3(coord1.x, coord1.y, coord1.z)];
-    
+    float3 v000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord0.x, coord0.y, coord0.z)];
+    float3 v100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord1.x, coord0.y, coord0.z)];
+    float3 v010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord0.x, coord1.y, coord0.z)];
+    float3 v110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord1.x, coord1.y, coord0.z)];
+    float3 v001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord0.x, coord0.y, coord1.z)];
+    float3 v101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord1.x, coord0.y, coord1.z)];
+    float3 v011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord0.x, coord1.y, coord1.z)];
+    float3 v111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z))
+                      ? float3(0, 0, 0)
+                      : velocityRead[uint3(coord1.x, coord1.y, coord1.z)];
+
     // Trilinear interpolation
     float3 v00 = lerp(v000, v100, t.x);
     float3 v10 = lerp(v010, v110, t.x);
     float3 v01 = lerp(v001, v101, t.x);
     float3 v11 = lerp(v011, v111, t.x);
-    
+
     float3 v0 = lerp(v00, v10, t.y);
     float3 v1 = lerp(v01, v11, t.y);
-    
+
     return lerp(v0, v1, t.z);
 }
 
 float SampleDensity(float3 worldPos)
 {
     uint3 coord = WorldPosToCoord(worldPos);
-    
+
     // If sampling inside solid, return zero density
     if (IsSolidAtCoord(coord))
         return 0.0;
-    
+
     float3 coordFloat = worldPos / voxelSize + float3(dimensions) * 0.5;
     coordFloat = clamp(coordFloat, 0.0, float3(dimensions - 1));
-    
+
     uint3 coord0 = uint3(floor(coordFloat));
     uint3 coord1 = min(coord0 + 1, dimensions - 1);
     float3 t = frac(coordFloat);
-    
+
     // Sample 8 corners, but zero out any that are inside solids
-    float d000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z)) ? 0.0 : densityRead[uint3(coord0.x, coord0.y, coord0.z)];
-    float d100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z)) ? 0.0 : densityRead[uint3(coord1.x, coord0.y, coord0.z)];
-    float d010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z)) ? 0.0 : densityRead[uint3(coord0.x, coord1.y, coord0.z)];
-    float d110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z)) ? 0.0 : densityRead[uint3(coord1.x, coord1.y, coord0.z)];
-    float d001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z)) ? 0.0 : densityRead[uint3(coord0.x, coord0.y, coord1.z)];
-    float d101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z)) ? 0.0 : densityRead[uint3(coord1.x, coord0.y, coord1.z)];
-    float d011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z)) ? 0.0 : densityRead[uint3(coord0.x, coord1.y, coord1.z)];
-    float d111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z)) ? 0.0 : densityRead[uint3(coord1.x, coord1.y, coord1.z)];
-    
+    float d000 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord0.z))
+                     ? 0.0
+                     : densityRead[uint3(coord0.x, coord0.y, coord0.z)];
+    float d100 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord0.z))
+                     ? 0.0
+                     : densityRead[uint3(coord1.x, coord0.y, coord0.z)];
+    float d010 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord0.z))
+                     ? 0.0
+                     : densityRead[uint3(coord0.x, coord1.y, coord0.z)];
+    float d110 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord0.z))
+                     ? 0.0
+                     : densityRead[uint3(coord1.x, coord1.y, coord0.z)];
+    float d001 = IsSolidAtCoord(uint3(coord0.x, coord0.y, coord1.z))
+                     ? 0.0
+                     : densityRead[uint3(coord0.x, coord0.y, coord1.z)];
+    float d101 = IsSolidAtCoord(uint3(coord1.x, coord0.y, coord1.z))
+                     ? 0.0
+                     : densityRead[uint3(coord1.x, coord0.y, coord1.z)];
+    float d011 = IsSolidAtCoord(uint3(coord0.x, coord1.y, coord1.z))
+                     ? 0.0
+                     : densityRead[uint3(coord0.x, coord1.y, coord1.z)];
+    float d111 = IsSolidAtCoord(uint3(coord1.x, coord1.y, coord1.z))
+                     ? 0.0
+                     : densityRead[uint3(coord1.x, coord1.y, coord1.z)];
+
     // Trilinear interpolation
     float d00 = lerp(d000, d100, t.x);
     float d10 = lerp(d010, d110, t.x);
     float d01 = lerp(d001, d101, t.x);
     float d11 = lerp(d011, d111, t.x);
-    
+
     float d0 = lerp(d00, d10, t.y);
     float d1 = lerp(d01, d11, t.y);
-    
+
     return lerp(d0, d1, t.z);
 }
 
@@ -166,19 +198,11 @@ void InitializeFluid(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id))
         return;
-        
-    if (IsSolidAtCoord(id))
-    {
-        velocityWrite[id] = float3(0, 0, 0);
-        densityWrite[id] = 0.0;
-        pressureWrite[id] = 0.0;
-    }
-    else
-    {
-        velocityWrite[id] = float3(0, 0, 0);
-        densityWrite[id] = 0.0;
-        pressureWrite[id] = 0.0;
-    }
+
+
+    velocityWrite[id] = float3(0, 0, 0);
+    densityWrite[id] = 0.0;
+    pressureWrite[id] = 0.0;
 }
 
 [numthreads(4, 4, 4)]
@@ -186,7 +210,7 @@ void UpdateBoundariesFromSolids(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id))
         return;
-        
+
     if (IsSolidAtCoord(id))
     {
         // Zero out fluid properties inside solid regions
@@ -208,16 +232,16 @@ void AddSources(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id) || IsSolidAtCoord(id))
         return;
-        
+
     float3 worldPos = CoordToWorldPos(id);
     float distance = length(worldPos - sourcePosition);
-    
+
     if (distance < sourceRadius)
     {
         float falloff = 1.0 - smoothstep(0.0, sourceRadius, distance);
         float3 currentVel = velocityRead[id];
         float currentDensity = densityRead[id];
-        
+
         // Add velocity and density
         velocityWrite[id] = currentVel + sourceVelocity * falloff * deltaTime;
         densityWrite[id] = min(1.0, currentDensity + sourceDensity * falloff * deltaTime);
@@ -234,24 +258,24 @@ void Advection(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id) || IsSolidAtCoord(id))
         return;
-        
+
     float3 worldPos = CoordToWorldPos(id);
     float3 velocity = velocityRead[id];
-    
+
     // Semi-Lagrangian advection with collision detection
     float3 targetPos = worldPos - velocity * deltaTime;
-    
+
     // Simple collision detection along advection path
     float3 direction = normalize(targetPos - worldPos);
     float distance = length(targetPos - worldPos);
-    
+
     // Step along path and check for solid collisions
     float stepSize = voxelSize * 0.5;
     for (float t = stepSize; t < distance; t += stepSize)
     {
         float3 samplePos = worldPos + direction * t;
         uint3 sampleCoord = WorldPosToCoord(samplePos);
-        
+
         if (IsSolidAtCoord(sampleCoord))
         {
             // Hit solid, adjust target position
@@ -259,11 +283,11 @@ void Advection(uint3 id : SV_DispatchThreadID)
             break;
         }
     }
-    
+
     // Sample at (possibly adjusted) target position
     float3 advectedVelocity = SampleVelocity(targetPos);
     float advectedDensity = SampleDensity(targetPos);
-    
+
     // Apply dissipation
     velocityWrite[id] = advectedVelocity * velocityDissipation;
     densityWrite[id] = advectedDensity * densityDissipation;
@@ -274,29 +298,29 @@ void Diffusion(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id) || IsSolidAtCoord(id))
         return;
-        
+
     float3 currentVel = velocityRead[id];
     float3 neighborSum = float3(0, 0, 0);
     int neighborCount = 0;
-    
+
     // Sample 6 neighbors
     int3 offsets[6] = {
         int3(-1, 0, 0), int3(1, 0, 0),
         int3(0, -1, 0), int3(0, 1, 0),
         int3(0, 0, -1), int3(0, 0, 1)
     };
-    
+
     for (int i = 0; i < 6; i++)
     {
         uint3 neighborCoord = uint3(int3(id) + offsets[i]);
-        
+
         if (IsValidCoord(neighborCoord) && !IsSolidAtCoord(neighborCoord))
         {
             neighborSum += velocityRead[neighborCoord];
             neighborCount++;
         }
     }
-    
+
     if (neighborCount > 0)
     {
         float3 averageVel = neighborSum / float(neighborCount);
@@ -307,7 +331,7 @@ void Diffusion(uint3 id : SV_DispatchThreadID)
     {
         velocityWrite[id] = currentVel;
     }
-    
+
     // Copy density unchanged
     densityWrite[id] = densityRead[id];
 }
@@ -320,36 +344,48 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
         divergence[id] = 0.0;
         return;
     }
-    
+
     float div = 0.0;
-    
+
     // Central differences for divergence calculation
     // ∇·v = ∂vx/∂x + ∂vy/∂y + ∂vz/∂z
-    
+
     // X component
     if (id.x > 0 && id.x < dimensions.x - 1)
     {
-        float3 velRight = !IsSolidAtCoord(uint3(id.x + 1, id.y, id.z)) ? velocityRead[uint3(id.x + 1, id.y, id.z)] : float3(0, 0, 0);
-        float3 velLeft = !IsSolidAtCoord(uint3(id.x - 1, id.y, id.z)) ? velocityRead[uint3(id.x - 1, id.y, id.z)] : float3(0, 0, 0);
+        float3 velRight = !IsSolidAtCoord(uint3(id.x + 1, id.y, id.z))
+                              ? velocityRead[uint3(id.x + 1, id.y, id.z)]
+                              : float3(0, 0, 0);
+        float3 velLeft = !IsSolidAtCoord(uint3(id.x - 1, id.y, id.z))
+                             ? velocityRead[uint3(id.x - 1, id.y, id.z)]
+                             : float3(0, 0, 0);
         div += (velRight.x - velLeft.x) / (2.0 * voxelSize);
     }
-    
+
     // Y component
     if (id.y > 0 && id.y < dimensions.y - 1)
     {
-        float3 velUp = !IsSolidAtCoord(uint3(id.x, id.y + 1, id.z)) ? velocityRead[uint3(id.x, id.y + 1, id.z)] : float3(0, 0, 0);
-        float3 velDown = !IsSolidAtCoord(uint3(id.x, id.y - 1, id.z)) ? velocityRead[uint3(id.x, id.y - 1, id.z)] : float3(0, 0, 0);
+        float3 velUp = !IsSolidAtCoord(uint3(id.x, id.y + 1, id.z))
+                           ? velocityRead[uint3(id.x, id.y + 1, id.z)]
+                           : float3(0, 0, 0);
+        float3 velDown = !IsSolidAtCoord(uint3(id.x, id.y - 1, id.z))
+                             ? velocityRead[uint3(id.x, id.y - 1, id.z)]
+                             : float3(0, 0, 0);
         div += (velUp.y - velDown.y) / (2.0 * voxelSize);
     }
-    
+
     // Z component
     if (id.z > 0 && id.z < dimensions.z - 1)
     {
-        float3 velForward = !IsSolidAtCoord(uint3(id.x, id.y, id.z + 1)) ? velocityRead[uint3(id.x, id.y, id.z + 1)] : float3(0, 0, 0);
-        float3 velBack = !IsSolidAtCoord(uint3(id.x, id.y, id.z - 1)) ? velocityRead[uint3(id.x, id.y, id.z - 1)] : float3(0, 0, 0);
+        float3 velForward = !IsSolidAtCoord(uint3(id.x, id.y, id.z + 1))
+                                ? velocityRead[uint3(id.x, id.y, id.z + 1)]
+                                : float3(0, 0, 0);
+        float3 velBack = !IsSolidAtCoord(uint3(id.x, id.y, id.z - 1))
+                             ? velocityRead[uint3(id.x, id.y, id.z - 1)]
+                             : float3(0, 0, 0);
         div += (velForward.z - velBack.z) / (2.0 * voxelSize);
     }
-    
+
     divergence[id] = div;
 }
 
@@ -361,31 +397,31 @@ void PressureSolve(uint3 id : SV_DispatchThreadID)
         pressureWrite[id] = 0.0;
         return;
     }
-    
+
     float div = divergence[id];
     float pressureSum = 0.0;
     int validNeighbors = 0;
-    
+
     // Jacobi iteration for pressure Poisson equation
     // ∇²p = ∇·v
-    
+
     int3 offsets[6] = {
         int3(-1, 0, 0), int3(1, 0, 0),
         int3(0, -1, 0), int3(0, 1, 0),
         int3(0, 0, -1), int3(0, 0, 1)
     };
-    
+
     for (int i = 0; i < 6; i++)
     {
         uint3 neighborCoord = uint3(int3(id) + offsets[i]);
-        
+
         if (IsValidCoord(neighborCoord) && !IsSolidAtCoord(neighborCoord))
         {
             pressureSum += pressureRead[neighborCoord];
             validNeighbors++;
         }
     }
-    
+
     if (validNeighbors > 0)
     {
         float alpha = -voxelSize * voxelSize;
@@ -403,13 +439,13 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id) || IsSolidAtCoord(id))
         return;
-        
+
     float3 currentVel = velocityRead[id];
     float3 pressureGradient = float3(0, 0, 0);
-    
+
     // Compute pressure gradient using central differences
     // ∇p = (∂p/∂x, ∂p/∂y, ∂p/∂z)
-    
+
     // X gradient
     if (id.x > 0 && id.x < dimensions.x - 1)
     {
@@ -417,7 +453,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
         float pLeft = !IsSolidAtCoord(uint3(id.x - 1, id.y, id.z)) ? pressureRead[uint3(id.x - 1, id.y, id.z)] : 0.0;
         pressureGradient.x = (pRight - pLeft) / (2.0 * voxelSize);
     }
-    
+
     // Y gradient
     if (id.y > 0 && id.y < dimensions.y - 1)
     {
@@ -425,7 +461,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
         float pDown = !IsSolidAtCoord(uint3(id.x, id.y - 1, id.z)) ? pressureRead[uint3(id.x, id.y - 1, id.z)] : 0.0;
         pressureGradient.y = (pUp - pDown) / (2.0 * voxelSize);
     }
-    
+
     // Z gradient
     if (id.z > 0 && id.z < dimensions.z - 1)
     {
@@ -433,14 +469,14 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
         float pBack = !IsSolidAtCoord(uint3(id.x, id.y, id.z - 1)) ? pressureRead[uint3(id.x, id.y, id.z - 1)] : 0.0;
         pressureGradient.z = (pForward - pBack) / (2.0 * voxelSize);
     }
-    
+
     // Apply pressure gradient to make velocity field divergence-free
     // v_new = v_old - ∇p
     float3 newVelocity = currentVel - pressureGradient;
-    
+
     // Apply external forces (gravity)
     newVelocity += gravity * deltaTime;
-    
+
     velocityWrite[id] = newVelocity;
     densityWrite[id] = densityRead[id]; // Copy density unchanged
 }
@@ -450,7 +486,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
 {
     if (!IsValidCoord(id))
         return;
-        
+
     if (IsSolidAtCoord(id))
     {
         // Zero velocity inside solids
@@ -459,28 +495,28 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
         pressureWrite[id] = 0.0;
         return;
     }
-    
+
     float3 velocity = velocityWrite[id];
-    
+
     // Apply no-slip boundary conditions at solid interfaces
     int3 offsets[6] = {
         int3(-1, 0, 0), int3(1, 0, 0),
         int3(0, -1, 0), int3(0, 1, 0),
         int3(0, 0, -1), int3(0, 0, 1)
     };
-    
+
     for (int i = 0; i < 6; i++)
     {
         uint3 neighborCoord = uint3(int3(id) + offsets[i]);
-        
+
         if (IsValidCoord(neighborCoord) && IsSolidAtCoord(neighborCoord))
         {
             // Get surface normal from solid SDF gradient
             float3 surfaceNormal = GetSolidNormal(neighborCoord);
-            
+
             // Apply no-slip boundary condition with friction
             float velDotNormal = dot(velocity, surfaceNormal);
-            
+
             if (velDotNormal > 0.0) // Moving towards solid
             {
                 // Remove normal component and apply friction
@@ -489,7 +525,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
             }
         }
     }
-    
+
     // Apply volume boundary conditions (walls of simulation domain)
     if (id.x == 0 || id.x == dimensions.x - 1)
         velocity.x = 0.0;
@@ -499,7 +535,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
         velocity.y = min(0.0, velocity.y); // Allow downward flow at top
     if (id.z == 0 || id.z == dimensions.z - 1)
         velocity.z = 0.0;
-    
+
     velocityWrite[id] = velocity;
 }
 

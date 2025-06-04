@@ -1,0 +1,253 @@
+#pragma kernel ExtractSlice
+#pragma kernel ExtractSliceWithStats
+#pragma kernel ComputeTextureStats
+
+// Input 3D texture (can be single channel or multi-channel)
+Texture3D<float4> SourceTexture3D;
+SamplerState sampler_SourceTexture3D;
+
+// Output 2D texture for visualization
+RWTexture2D<float4> TargetTexture2D;
+
+// Statistics buffer for min/max values
+RWStructuredBuffer<float4> TextureStats; // [0] = min values, [1] = max values
+
+// Parameters
+uint SliceDepth;
+float ValueMultiplier;
+uint TextureWidth;
+uint TextureHeight;
+uint TextureDepth;
+uint ComponentMask; // Which components to extract (bit mask: 1=x, 2=y, 4=z, 8=w)
+
+[numthreads(8, 8, 1)]
+void ExtractSlice(uint3 id : SV_DispatchThreadID)
+{
+    uint2 outputSize;
+    TargetTexture2D.GetDimensions(outputSize.x, outputSize.y);
+    
+    if (id.x >= outputSize.x || id.y >= outputSize.y)
+        return;
+    
+    // Calculate UV coordinates for sampling the 3D texture
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(outputSize.x),
+        (float(id.y) + 0.5) / float(outputSize.y),
+        (float(SliceDepth) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample the 3D texture
+    float4 sampleValue = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0);
+    
+    // Apply multiplier for visibility
+    sampleValue *= ValueMultiplier;
+    
+    // Write to output texture
+    TargetTexture2D[id.xy] = sampleValue;
+}
+
+[numthreads(8, 8, 1)]
+void ExtractSliceWithStats(uint3 id : SV_DispatchThreadID)
+{
+    uint2 outputSize;
+    TargetTexture2D.GetDimensions(outputSize.x, outputSize.y);
+    
+    if (id.x >= outputSize.x || id.y >= outputSize.y)
+        return;
+    
+    // Calculate UV coordinates for sampling the 3D texture
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(outputSize.x),
+        (float(id.y) + 0.5) / float(outputSize.y),
+        (float(SliceDepth) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample the 3D texture
+    float4 sampleValue = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0);
+    
+    // Update statistics atomically
+    // Note: This is a simplified approach - for more accurate stats, 
+    // you'd want to use InterlockedMax/InterlockedMin but those don't work with floats directly
+    if (id.x == 0 && id.y == 0)
+    {
+        TextureStats[0] = sampleValue; // Will be overwritten, but initializes the buffer
+        TextureStats[1] = sampleValue;
+    }
+    
+    // Apply multiplier for visibility
+    sampleValue *= ValueMultiplier;
+    
+    // Write to output texture
+    TargetTexture2D[id.xy] = sampleValue;
+}
+
+[numthreads(4, 4, 4)]
+void ComputeTextureStats(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= TextureWidth || id.y >= TextureHeight || id.z >= TextureDepth)
+        return;
+    
+    // Calculate UV coordinates
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(TextureWidth),
+        (float(id.y) + 0.5) / float(TextureHeight),
+        (float(id.z) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample the texture
+    float4 sampleValue = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0);
+    
+    // For the first thread, initialize the stats
+    if (id.x == 0 && id.y == 0 && id.z == 0)
+    {
+        TextureStats[0] = sampleValue; // min values
+        TextureStats[1] = sampleValue; // max values
+    }
+    
+    // Note: Proper min/max computation would require more sophisticated reduction
+    // For debugging purposes, we'll just sample a few representative values
+    
+    // Sample some key locations for debugging
+    if ((id.x % 8 == 0) && (id.y % 8 == 0) && (id.z % 8 == 0))
+    {
+        // Update stats for every 8th voxel to get a representative sample
+        // This is not perfectly accurate but gives us an idea of the data range
+        
+        // Simple approach: write to different indices to see various samples
+        uint statsIndex = 2 + (id.z / 8) % 8; // Use indices 2-9 for samples
+        if (statsIndex < 16) // Assuming we have at least 16 entries in the stats buffer
+        {
+            TextureStats[statsIndex] = sampleValue;
+        }
+    }
+}
+
+// Specialized kernels for different texture types
+
+[numthreads(8, 8, 1)]
+void ExtractDensitySlice(uint3 id : SV_DispatchThreadID)
+{
+    uint2 outputSize;
+    TargetTexture2D.GetDimensions(outputSize.x, outputSize.y);
+    
+    if (id.x >= outputSize.x || id.y >= outputSize.y)
+        return;
+    
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(outputSize.x),
+        (float(id.y) + 0.5) / float(outputSize.y),
+        (float(SliceDepth) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample density (single channel)
+    float density = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0).r;
+    
+    // Apply multiplier and create a grayscale visualization
+    density *= ValueMultiplier;
+    
+    // Color-code density for better visualization
+    float4 outputColor;
+    if (density < 0.001)
+    {
+        outputColor = float4(0, 0, 0, 1); // Black for no density
+    }
+    else if (density < 0.1)
+    {
+        outputColor = float4(0, 0, density * 10, 1); // Blue for low density
+    }
+    else if (density < 0.5)
+    {
+        outputColor = float4(0, density * 2, 1, 1); // Blue to cyan
+    }
+    else
+    {
+        outputColor = float4(density, density, 1, 1); // Cyan to white
+    }
+    
+    TargetTexture2D[id.xy] = outputColor;
+}
+
+[numthreads(8, 8, 1)]
+void ExtractVelocitySlice(uint3 id : SV_DispatchThreadID)
+{
+    uint2 outputSize;
+    TargetTexture2D.GetDimensions(outputSize.x, outputSize.y);
+    
+    if (id.x >= outputSize.x || id.y >= outputSize.y)
+        return;
+    
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(outputSize.x),
+        (float(id.y) + 0.5) / float(outputSize.y),
+        (float(SliceDepth) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample velocity (3 channels)
+    float3 velocity = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0).rgb;
+    
+    // Calculate velocity magnitude for intensity
+    float magnitude = length(velocity);
+    
+    // Normalize velocity for direction (with safety check)
+    float3 direction = magnitude > 0.001 ? velocity / magnitude : float3(0, 0, 0);
+    
+    // Apply multiplier
+    magnitude *= ValueMultiplier;
+    
+    // Color-code velocity: direction as color, magnitude as intensity
+    float4 outputColor;
+    if (magnitude < 0.001)
+    {
+        outputColor = float4(0, 0, 0, 1); // Black for no velocity
+    }
+    else
+    {
+        // Map direction to color (x=red, y=green, z=blue)
+        // Take absolute values and normalize
+        float3 directionColor = abs(direction);
+        outputColor = float4(directionColor * magnitude, 1);
+    }
+    
+    TargetTexture2D[id.xy] = outputColor;
+}
+
+[numthreads(8, 8, 1)]
+void ExtractPressureSlice(uint3 id : SV_DispatchThreadID)
+{
+    uint2 outputSize;
+    TargetTexture2D.GetDimensions(outputSize.x, outputSize.y);
+    
+    if (id.x >= outputSize.x || id.y >= outputSize.y)
+        return;
+    
+    float3 uvw = float3(
+        (float(id.x) + 0.5) / float(outputSize.x),
+        (float(id.y) + 0.5) / float(outputSize.y),
+        (float(SliceDepth) + 0.5) / float(TextureDepth)
+    );
+    
+    // Sample pressure (single channel)
+    float pressure = SourceTexture3D.SampleLevel(sampler_SourceTexture3D, uvw, 0).r;
+    
+    // Apply multiplier
+    pressure *= ValueMultiplier;
+    
+    // Color-code pressure: blue for negative, red for positive
+    float4 outputColor;
+    if (abs(pressure) < 0.001)
+    {
+        outputColor = float4(0, 0, 0, 1); // Black for neutral pressure
+    }
+    else if (pressure > 0)
+    {
+        // Positive pressure = red
+        outputColor = float4(pressure, 0, 0, 1);
+    }
+    else
+    {
+        // Negative pressure = blue
+        outputColor = float4(0, 0, -pressure, 1);
+    }
+    
+    TargetTexture2D[id.xy] = outputColor;
+}
