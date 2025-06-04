@@ -52,7 +52,7 @@ namespace Tuntenfisch.Fluids
             // Reset state
             ResetSimulationState();
             
-            Debug.Log($"Initialized ChunkFluidData at {WorldPosition} with dimensions {dimensions}");
+            // Debug.Log($"Initialized ChunkFluidData at {WorldPosition} with dimensions {dimensions}");
         }
 
         public void Cleanup()
@@ -65,7 +65,7 @@ namespace Tuntenfisch.Fluids
             
             ResetSimulationState();
             
-            Debug.Log($"Cleaned up ChunkFluidData at {WorldPosition}");
+            // Debug.Log($"Cleaned up ChunkFluidData at {WorldPosition}");
         }
 
         private void ResetSimulationState()

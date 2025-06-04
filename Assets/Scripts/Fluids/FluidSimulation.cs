@@ -91,6 +91,7 @@ namespace Tuntenfisch.Fluids
             BindTexturesForKernel(m_initializeFluidKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
 
             m_fluidCompute.Dispatch(m_initializeFluidKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
+            // Debug.Log($"Initialized fluid textures for chunk at position {fluidData.WorldPosition}");
         }
 
         /// <summary>
@@ -142,6 +143,7 @@ namespace Tuntenfisch.Fluids
             BindTexturesForKernel(m_updateBoundariesFromSolidsKernel, fluidData.FluidTextures,
                 fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_updateBoundariesFromSolidsKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
+            // Debug.Log($"Updated fluid boundaries from solids for chunk at position {fluidData.WorldPosition}");
         }
 
         /// <summary>
@@ -156,12 +158,14 @@ namespace Tuntenfisch.Fluids
             BindTexturesForKernel(m_addSourcesKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
 
             m_fluidCompute.Dispatch(m_addSourcesKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
+            Debug.Log($"Added fluid source to chunk at position {fluidData.WorldPosition}");
         }
 
         private void ExecuteAdvection(ChunkFluidData fluidData)
         {
             BindTexturesForKernel(m_advectionKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_advectionKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
+            Debug.Log($"Completed fluid advection for chunk at position {fluidData.WorldPosition}");
         }
 
         private void ExecuteDiffusion(ChunkFluidData fluidData)
@@ -183,7 +187,7 @@ namespace Tuntenfisch.Fluids
             // Iterative pressure solve
             for (int i = 0; i < m_pressureIterations; i++)
             {
-                BindTexturesForKernel(m_pressureSolveKernel, textures, fluidData.SolidVoxelBuffer, false);
+                BindTexturesForKernel(m_pressureSolveKernel, textures, fluidData.SolidVoxelBuffer, true);
                 m_fluidCompute.Dispatch(m_pressureSolveKernel, numberOfVoxels);
                 textures.SwapPressureTextures(); // Only swap pressure textures
             }
@@ -317,15 +321,15 @@ namespace Tuntenfisch.Fluids
             var textures = new ChunkFluidTextures();
 
             // Create velocity textures (RGB for x,y,z components)
-            textures.VelocityRead = CreateTexture3D(dimensions, RenderTextureFormat.ARGBFloat, false);
+            textures.VelocityRead = CreateTexture3D(dimensions, RenderTextureFormat.ARGBFloat, true);
             textures.VelocityWrite = CreateTexture3D(dimensions, RenderTextureFormat.ARGBFloat, true);
 
             // Create density textures (single channel)
-            textures.DensityRead = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, false);
+            textures.DensityRead = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, true);
             textures.DensityWrite = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, true);
 
             // Create pressure textures (single channel)
-            textures.PressureRead = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, false);
+            textures.PressureRead = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, true);
             textures.PressureWrite = CreateTexture3D(dimensions, RenderTextureFormat.RFloat, true);
 
             // Create divergence texture (single channel, always writable)

@@ -304,7 +304,7 @@ namespace Tuntenfisch.World
                 WorldManager.FluidSimulation.InitializeChunkFluidTextures(m_fluidData);
             }
 
-            Debug.Log($"Initialized fluid data for chunk at {transform.position}");
+            // Debug.Log($"Initialized fluid data for chunk at {transform.position}");
         }
 
         private void CleanupFluidData()

@@ -67,7 +67,6 @@ Shader "Fluids/VolumetricFluid"
             float _DensityThreshold;
             float _StepSize;
             int _MaxSteps;
-            float _Time;
             
             // Ray-box intersection
             float2 RayBoxIntersection(float3 rayOrigin, float3 rayDirection, float3 boxMin, float3 boxMax)

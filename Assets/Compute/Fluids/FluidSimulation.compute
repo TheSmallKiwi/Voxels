@@ -13,15 +13,14 @@
 #include "Assets/Compute/Voxels/Include/Voxel.hlsl"
 
 // Fluid simulation textures (double buffered)
-RWTexture3D<float3> velocityRead;
+Texture3D<float3> velocityRead;
 RWTexture3D<float3> velocityWrite;
 
-RWTexture3D<float> densityRead;
+Texture3D<float> densityRead;
 RWTexture3D<float> densityWrite;
 
-RWTexture3D<float> pressureRead;
+Texture3D<float> pressureRead;
 RWTexture3D<float> pressureWrite;
-
 
 RWTexture3D<float> divergence;
 
