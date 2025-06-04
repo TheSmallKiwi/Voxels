@@ -158,14 +158,14 @@ namespace Tuntenfisch.Fluids
             BindTexturesForKernel(m_addSourcesKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
 
             m_fluidCompute.Dispatch(m_addSourcesKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
-            Debug.Log($"Added fluid source to chunk at position {fluidData.WorldPosition}");
+            // Debug.Log($"Added fluid source to chunk at position {fluidData.WorldPosition}");
         }
 
         private void ExecuteAdvection(ChunkFluidData fluidData)
         {
             BindTexturesForKernel(m_advectionKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_advectionKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
-            Debug.Log($"Completed fluid advection for chunk at position {fluidData.WorldPosition}");
+            // Debug.Log($"Completed fluid advection for chunk at position {fluidData.WorldPosition}");
         }
 
         private void ExecuteDiffusion(ChunkFluidData fluidData)

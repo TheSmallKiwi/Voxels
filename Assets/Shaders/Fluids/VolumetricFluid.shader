@@ -71,7 +71,7 @@ Shader "Fluids/VolumetricFluid"
             // Ray-box intersection
             float2 RayBoxIntersection(float3 rayOrigin, float3 rayDirection, float3 boxMin, float3 boxMax)
             {
-                float3 invDir = 1.0 / rayDirection;
+                float3 invDir = 1.0 / (rayDirection + 1e-6); // Add small epsilon to avoid division by zero
                 float3 t1 = (boxMin - rayOrigin) * invDir;
                 float3 t2 = (boxMax - rayOrigin) * invDir;
                 
@@ -109,7 +109,7 @@ Shader "Fluids/VolumetricFluid"
                 return SAMPLE_TEXTURE3D(_VelocityTexture, sampler_linear_clamp, uvw).rgb;
             }
             
-            // Lighting calculation for volumetric scattering
+            // Simplified lighting calculation for volumetric scattering
             float3 CalculateVolumetricLighting(float3 worldPos, float3 rayDirection, float density)
             {
                 Light mainLight = GetMainLight();
@@ -121,18 +121,14 @@ Shader "Fluids/VolumetricFluid"
                 float g = 0.3; // Anisotropy factor
                 float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosTheta, 1.5);
                 
-                // Simple light attenuation through volume
-                float3 lightUVW = WorldToVolumeUV(worldPos);
+                // Simplified light attenuation - just use a constant approximation
+                // to avoid the problematic shadow sampling loop
                 float lightAttenuation = 1.0;
                 
-                // Sample along light ray for shadow approximation
-                float3 lightStep = lightDir * _StepSize * 0.5;
-                for (int i = 0; i < 8; i++)
-                {
-                    lightUVW += lightStep / _VolumeSize;
-                    float shadowDensity = SampleDensity(lightUVW);
-                    lightAttenuation *= exp(-shadowDensity * _AbsorptionStrength * _StepSize * 0.5);
-                }
+                // Single sample shadow approximation instead of loop
+                float3 lightUVW = WorldToVolumeUV(worldPos + lightDir * _StepSize * 2.0);
+                float shadowDensity = SampleDensity(lightUVW);
+                lightAttenuation *= exp(-shadowDensity * _AbsorptionStrength * _StepSize);
                 
                 return lightColor * phase * lightAttenuation * _ScatteringStrength;
             }
@@ -180,17 +176,23 @@ Shader "Fluids/VolumetricFluid"
                 if (tFar <= tNear)
                     discard;
                 
-                // Ray marching
+                // Calculate total ray distance and ensure we don't exceed max steps
+                float totalDistance = tFar - tNear;
+                float actualStepSize = max(_StepSize, totalDistance / float(_MaxSteps));
+                int actualMaxSteps = min(_MaxSteps, int(totalDistance / actualStepSize) + 1);
+                
+                // Ray marching with explicit loop bounds
                 float3 currentPos = cameraPos + rayDir * tNear;
-                float3 rayStep = rayDir * _StepSize;
+                float3 rayStep = rayDir * actualStepSize;
                 
                 float4 accumulatedColor = float4(0, 0, 0, 0);
                 float transmittance = 1.0;
                 
                 float t = tNear;
-                int stepCount = 0;
                 
-                while (t < tFar && stepCount < _MaxSteps && transmittance > 0.01)
+                // Use [unroll] with a reasonable maximum to help compiler
+                [unroll(64)]
+                for (int stepCount = 0; stepCount < 64 && stepCount < actualMaxSteps && t < tFar && transmittance > 0.01; stepCount++)
                 {
                     float3 uvw = WorldToVolumeUV(currentPos);
                     float density = SampleDensity(uvw);
@@ -198,8 +200,8 @@ Shader "Fluids/VolumetricFluid"
                     if (density > _DensityThreshold)
                     {
                         // Calculate absorption and scattering
-                        float absorption = density * _AbsorptionStrength * _StepSize;
-                        float scattering = density * _ScatteringStrength * _StepSize;
+                        float absorption = density * _AbsorptionStrength * actualStepSize;
+                        float scattering = density * _ScatteringStrength * actualStepSize;
                         
                         // Calculate lighting
                         float3 lighting = CalculateVolumetricLighting(currentPos, rayDir, density);
@@ -226,8 +228,7 @@ Shader "Fluids/VolumetricFluid"
                     
                     // Advance ray
                     currentPos += rayStep;
-                    t += _StepSize;
-                    stepCount++;
+                    t += actualStepSize;
                 }
                 
                 // Final color output

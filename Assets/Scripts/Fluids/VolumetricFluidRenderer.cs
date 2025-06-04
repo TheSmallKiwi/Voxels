@@ -123,7 +123,6 @@ namespace Tuntenfisch.Rendering
             m_absorptionID = Shader.PropertyToID("_AbsorptionStrength");
             m_scatteringID = Shader.PropertyToID("_ScatteringStrength");
             m_fluidColorID = Shader.PropertyToID("_FluidColor");
-            m_timeID = Shader.PropertyToID("_Time");
         }
 
         /// <summary>
@@ -198,7 +197,6 @@ namespace Tuntenfisch.Rendering
             m_commandBuffer.SetGlobalFloat(m_absorptionID, m_absorptionStrength);
             m_commandBuffer.SetGlobalFloat(m_scatteringID, m_scatteringStrength);
             m_commandBuffer.SetGlobalColor(m_fluidColorID, m_fluidColor);
-            m_commandBuffer.SetGlobalFloat(m_timeID, Time.time);
         }
 
         private void RenderChunkVolume(ChunkVolumetricData chunkData)
@@ -306,6 +304,7 @@ namespace Tuntenfisch.Fluids
             if (renderer != null)
             {
                 renderer.RegisterChunk(chunkCoordinate, fluidData, worldPosition, volumeSize);
+                Debug.Log($"Registered chunk at {chunkCoordinate} for volumetric rendering. Position: {worldPosition}, Size: {volumeSize}");
             }
         }
 
