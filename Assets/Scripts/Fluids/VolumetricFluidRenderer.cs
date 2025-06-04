@@ -129,14 +129,14 @@ namespace Tuntenfisch.Rendering
         /// <summary>
         /// Register a chunk for volumetric rendering
         /// </summary>
-        public void RegisterChunk(int3 chunkCoordinate, ChunkFluidTextures fluidTextures, Vector3 worldPosition, Vector3 volumeSize)
+        public void RegisterChunk(int3 chunkCoordinate, ChunkFluidTextures fluidData, Vector3 worldPosition, Vector3 volumeSize)
         {
-            if (fluidTextures == null || !fluidTextures.IsValid())
+            if (fluidData == null || !fluidData.IsValid())
                 return;
 
             var chunkData = new ChunkVolumetricData
             {
-                FluidTextures = fluidTextures,
+                fluidData = fluidData,
                 WorldPosition = worldPosition,
                 VolumeSize = volumeSize,
                 LastUpdateTime = Time.time
@@ -204,8 +204,8 @@ namespace Tuntenfisch.Rendering
         private void RenderChunkVolume(ChunkVolumetricData chunkData)
         {
             // Set chunk-specific textures and parameters
-            m_commandBuffer.SetGlobalTexture(m_densityTextureID, chunkData.FluidTextures.DensityRead);
-            m_commandBuffer.SetGlobalTexture(m_velocityTextureID, chunkData.FluidTextures.VelocityRead);
+            m_commandBuffer.SetGlobalTexture(m_densityTextureID, chunkData.fluidData.DensityRead);
+            m_commandBuffer.SetGlobalTexture(m_velocityTextureID, chunkData.fluidData.VelocityRead);
             m_commandBuffer.SetGlobalVector(m_volumePositionID, chunkData.WorldPosition);
             m_commandBuffer.SetGlobalVector(m_volumeSizeID, chunkData.VolumeSize);
 
@@ -284,7 +284,7 @@ namespace Tuntenfisch.Rendering
     [System.Serializable]
     public class ChunkVolumetricData
     {
-        public ChunkFluidTextures FluidTextures;
+        public ChunkFluidTextures fluidData;
         public Vector3 WorldPosition;
         public Vector3 VolumeSize;
         public float LastUpdateTime;
@@ -299,13 +299,13 @@ namespace Tuntenfisch.Fluids
         /// <summary>
         /// Register chunk with volumetric renderer after simulation step
         /// </summary>
-        public static void RegisterForVolumetricRendering(this ChunkFluidTextures fluidTextures, 
+        public static void RegisterForVolumetricRendering(this ChunkFluidTextures fluidData, 
             int3 chunkCoordinate, Vector3 worldPosition, Vector3 volumeSize)
         {
             var renderer = Object.FindFirstObjectByType<Tuntenfisch.Rendering.VolumetricFluidRenderer>();
             if (renderer != null)
             {
-                renderer.RegisterChunk(chunkCoordinate, fluidTextures, worldPosition, volumeSize);
+                renderer.RegisterChunk(chunkCoordinate, fluidData, worldPosition, volumeSize);
             }
         }
 

@@ -7,14 +7,22 @@
 #pragma kernel PressureProjection
 #pragma kernel ApplyBoundaries
 #pragma kernel UpdateBoundariesFromSolids
+// #pragma kernel CountActiveFluidVoxels
+
+// Include voxel unpacking from existing system
+#include "Assets/Compute/Voxels/Include/Voxel.hlsl"
 
 // Fluid simulation textures (double buffered)
 RWTexture3D<float3> velocityRead;
 RWTexture3D<float3> velocityWrite;
+
 RWTexture3D<float> densityRead;
 RWTexture3D<float> densityWrite;
+
 RWTexture3D<float> pressureRead;
 RWTexture3D<float> pressureWrite;
+
+
 RWTexture3D<float> divergence;
 
 // Solid terrain data (from existing voxel system)
@@ -35,8 +43,6 @@ float3 sourceVelocity;
 float sourceRadius;
 float sourceDensity;
 
-// Include voxel unpacking from existing system
-#include "Assets/Compute/Voxels/Include/Voxel.hlsl"
 
 // Utility functions
 bool IsValidCoord(uint3 coord)
@@ -497,3 +503,16 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
     
     velocityWrite[id] = velocity;
 }
+
+// [numthreads(4, 4, 4)]
+// void CountActiveFluidVoxels(uint3 id : SV_DispatchThreadID)
+// {
+//     if (!IsValidCoord(id))
+//         return;
+//         
+//     float density = densityRead[id];
+//     if (density > densityThreshold)
+//     {
+//         InterlockedAdd(activeVoxelCount[0], 1);
+//     }
+// }

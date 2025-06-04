@@ -37,21 +37,25 @@ namespace Tuntenfisch.World
         private List<GPUVoxelVolumeCSGOperation> m_voxelVolumeCSGOperations;
         private ChunkFlags m_flags;
 
-        [Header("Fluid Rendering")] 
-        [SerializeField] private bool m_enableFluidRendering = true;
-        [SerializeField] private bool m_useVolumetricRendering = true;
+        [Header("Fluid Simulation")] [SerializeField]
+        private bool m_enableFluidSimulation = true;
 
-        // Fluid simulation data (texture-based)
-        private ChunkFluidTextures m_fluidTextures;
-        private FluidSourceData m_fluidSource;
-        private bool m_hasFluidSource = false;
-        private float m_fluidAccumulatedTime = 0f;
-        private float m_fluidTimeStep = 0.016f;
-        
-        // Volumetric rendering registration
+        [SerializeField] private float m_fluidTimeStep = 0.016f; // 60 FPS target
+        [SerializeField] private bool m_enableVolumetricRendering = true;
+        [SerializeField] private int m_maxSimulationStepsPerFrame = 3;
+
+        // Updated fluid simulation data (texture-based)
+        private ChunkFluidData m_fluidData;
         private bool m_registeredForVolumetricRendering = false;
+        private float m_lastBoundaryUpdateTime = 0f;
+        private const float BOUNDARY_UPDATE_INTERVAL = 0.1f; // Update boundaries every 100ms
+
+        // Performance monitoring
+        private float m_lastFluidUpdateTime = 0f;
+        private int m_simulationStepsThisFrame = 0;
 
         public ComputeBuffer VoxelVolumeBuffer => m_voxelVolumeBuffer;
+        public ChunkFluidData FluidData => m_fluidData;
 
         private void Awake()
         {
@@ -63,7 +67,9 @@ namespace Tuntenfisch.World
 
         private void Update()
         {
-            if (m_flags == 0)
+            m_simulationStepsThisFrame = 0;
+
+            if (m_flags == 0 && !ShouldUpdateFluid())
             {
                 return;
             }
@@ -73,9 +79,9 @@ namespace Tuntenfisch.World
             {
                 m_flags &= ~ChunkFlags.VoxelVolumeRegenerationRequested;
                 WorldManager.VoxelVolume.GenerateVoxelVolume(m_voxelVolumeBuffer, transform.position);
-                
-                // Update fluid boundaries when voxel volume changes
-                if (m_enableFluidRendering && m_fluidTextures != null && m_fluidTextures.IsValid())
+
+                // Mark fluid boundaries for update when voxel volume changes
+                if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
                 {
                     m_flags |= ChunkFlags.FluidBoundaryUpdateRequired;
                 }
@@ -88,9 +94,9 @@ namespace Tuntenfisch.World
                 WorldManager.VoxelVolume.ApplyVoxelVolumeCSGOperations(m_voxelVolumeBuffer, transform.position,
                     m_voxelVolumeCSGOperations);
                 m_voxelVolumeCSGOperations.Clear();
-                
-                // Update fluid boundaries after CSG operations
-                if (m_enableFluidRendering && m_fluidTextures != null && m_fluidTextures.IsValid())
+
+                // Mark fluid boundaries for update after CSG operations
+                if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
                 {
                     m_flags |= ChunkFlags.FluidBoundaryUpdateRequired;
                 }
@@ -121,12 +127,100 @@ namespace Tuntenfisch.World
                 m_meshCollider.sharedMesh = m_mesh;
             }
 
-            // Handle fluid simulation and volumetric rendering
-            if (m_enableFluidRendering && m_fluidTextures != null && m_fluidTextures.IsValid())
+            // Handle fluid simulation updates
+            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
             {
-                HandleFluidBoundaryUpdates();
                 UpdateFluidSimulation();
-                UpdateVolumetricRendering();
+            }
+        }
+
+        private bool ShouldUpdateFluid()
+        {
+            return m_enableFluidSimulation &&
+                   m_fluidData != null &&
+                   m_fluidData.IsValid() &&
+                   m_fluidData.NeedsSimulationUpdate();
+        }
+
+        private void UpdateFluidSimulation()
+        {
+            // Update timing
+            m_fluidData.UpdateSimulationTiming(Time.deltaTime);
+
+            // Handle boundary updates (less frequent than simulation)
+            if ((m_flags & ChunkFlags.FluidBoundaryUpdateRequired) == ChunkFlags.FluidBoundaryUpdateRequired ||
+                Time.time - m_lastBoundaryUpdateTime > BOUNDARY_UPDATE_INTERVAL)
+            {
+                UpdateFluidBoundaries();
+            }
+
+            // Run simulation steps as needed
+            while (m_fluidData.ShouldRunSimulation(m_fluidTimeStep) &&
+                   m_simulationStepsThisFrame < m_maxSimulationStepsPerFrame)
+            {
+                RunFluidSimulationStep();
+                m_fluidData.ConsumeSimulationTime(m_fluidTimeStep);
+                m_simulationStepsThisFrame++;
+            }
+
+            // Update volumetric rendering registration
+            UpdateVolumetricRenderingRegistration();
+
+            // Performance tracking
+            m_lastFluidUpdateTime = Time.time;
+        }
+
+        private void UpdateFluidBoundaries()
+        {
+            m_flags &= ~ChunkFlags.FluidBoundaryUpdateRequired;
+            m_lastBoundaryUpdateTime = Time.time;
+
+            if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
+            {
+                WorldManager.FluidSimulation.UpdateBoundariesFromSolids(m_fluidData);
+            }
+        }
+
+        private void RunFluidSimulationStep()
+        {
+            if (WorldManager.FluidSimulation == null || !WorldManager.FluidSimulation.IsSimulationEnabled)
+                return;
+
+            // Get current fluid source (if any)
+            FluidSourceData activeSource = null;
+            if (m_fluidData.HasFluidSource && m_fluidData.FluidSource.ShouldBeActive())
+            {
+                activeSource = m_fluidData.FluidSource;
+            }
+            else if (m_fluidData.FluidSource != null && !m_fluidData.FluidSource.ShouldBeActive())
+            {
+                // Remove expired source
+                m_fluidData.RemoveFluidSource();
+            }
+
+            // Run complete simulation step
+            WorldManager.FluidSimulation.SimulateChunkFluidStep(m_fluidData);
+
+            // TODO: Count active fluid voxels and update ChunkFluidData
+            // This would require an additional compute shader pass or readback
+            // For now, we'll estimate based on whether we have a source
+            int estimatedActiveVoxels = activeSource != null ? 100 : 0;
+            m_fluidData.UpdateActiveFluidVoxelCount(estimatedActiveVoxels);
+        }
+
+        private void UpdateVolumetricRenderingRegistration()
+        {
+            bool shouldBeRegistered = m_enableVolumetricRendering &&
+                                      m_fluidData.HasVisibleFluid() &&
+                                      m_fluidData.IsValid();
+
+            if (shouldBeRegistered && !m_registeredForVolumetricRendering)
+            {
+                RegisterForVolumetricRendering();
+            }
+            else if (!shouldBeRegistered && m_registeredForVolumetricRendering)
+            {
+                UnregisterFromVolumetricRendering();
             }
         }
 
@@ -134,27 +228,45 @@ namespace Tuntenfisch.World
         {
             WorldManager.VoxelConfig.MaterialConfig.OnDirtied -= OnMaterialConfigChanged;
             ReleaseBuffers();
+            CleanupFluidData();
         }
 
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.green;
             Gizmos.DrawWireCube(transform.position, WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions);
+
+            // Draw fluid debug info
+            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.HasFluidSource)
+            {
+                var source = m_fluidData.FluidSource;
+
+                // Draw source sphere
+                Gizmos.color = Color.cyan;
+                Gizmos.DrawWireSphere(source.Position, source.Radius);
+
+                // Draw velocity vector
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawRay(source.Position, source.Velocity);
+
+                // Draw remaining time indicator
+                if (source.Duration > 0)
+                {
+                    float remainingRatio = source.GetRemainingTime() / source.Duration;
+                    Gizmos.color = Color.Lerp(Color.red, Color.green, remainingRatio);
+                    Gizmos.DrawWireCube(source.Position + Vector3.up * 2f, Vector3.one * remainingRatio);
+                }
+            }
         }
+
+        #region IPoolable Implementation
 
         public void OnAcquire()
         {
             m_currentLOD = m_targetLOD = m_vertexCount = m_triangleCount = -1;
             CreateBuffers();
+            InitializeFluidData();
             gameObject.SetActive(true);
-
-            // Reset and initialize fluid state
-            if (m_enableFluidRendering)
-            {
-                ResetFluidState();
-                CreateFluidTextures();
-                RegisterForVolumetricRendering();
-            }
         }
 
         public void OnRelease()
@@ -165,65 +277,124 @@ namespace Tuntenfisch.World
             m_request = null;
             m_voxelVolumeCSGOperations.Clear();
             m_flags = 0;
-            gameObject.SetActive(false);
 
-            // Clear fluid state
-            if (m_enableFluidRendering)
+            CleanupFluidData();
+            gameObject.SetActive(false);
+        }
+
+        #endregion
+
+        #region Fluid Management
+
+        private void InitializeFluidData()
+        {
+            if (!m_enableFluidSimulation)
+                return;
+
+            CleanupFluidData(); // Ensure clean state
+
+            var dimensions = WorldManager.VoxelConfig.VoxelVolumeConfig.NumberOfVoxels;
+            m_fluidData = new ChunkFluidData();
+            m_fluidData.Initialize(dimensions, transform.position, m_voxelVolumeBuffer);
+            ;
+
+            // Initialize fluid textures through simulation system
+            if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
+            {
+                WorldManager.FluidSimulation.InitializeChunkFluidTextures(m_fluidData);
+            }
+
+            Debug.Log($"Initialized fluid data for chunk at {transform.position}");
+        }
+
+        private void CleanupFluidData()
+        {
+            if (m_registeredForVolumetricRendering)
             {
                 UnregisterFromVolumetricRendering();
-                ResetFluidState();
             }
+
+            m_fluidData?.Cleanup();
+            m_fluidData = null;
         }
 
-        private void HandleFluidBoundaryUpdates()
+        public void AddFluidSource(Vector3 worldPosition, Vector3 velocity, float radius, float amount,
+            MaterialIndex material = MaterialIndex.Water, float duration = -1f)
         {
-            if ((m_flags & ChunkFlags.FluidBoundaryUpdateRequired) == ChunkFlags.FluidBoundaryUpdateRequired)
+            if (!m_enableFluidSimulation || m_fluidData == null || !m_fluidData.IsValid())
             {
-                m_flags &= ~ChunkFlags.FluidBoundaryUpdateRequired;
-
-                if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
-                {
-                    WorldManager.FluidSimulation.UpdateBoundariesFromSolids(
-                        m_fluidTextures, 
-                        m_voxelVolumeBuffer
-                    );
-                }
+                Debug.LogWarning(
+                    $"Cannot add fluid source to chunk at {transform.position}: fluid simulation not available");
+                return;
             }
+
+            var sourceData = new FluidSourceData(worldPosition, velocity, radius, amount, material, duration);
+            m_fluidData.FluidSource = sourceData;
+
+            // Immediately add the source to simulation
+            if (WorldManager.FluidSimulation && WorldManager.FluidSimulation.IsSimulationEnabled)
+            {
+                WorldManager.FluidSimulation.AddFluidSource(m_fluidData);
+            }
+
+            Debug.Log($"Added fluid source to chunk at {transform.position}: {sourceData}");
         }
 
-        private void UpdateFluidSimulation()
+        public void RemoveFluidSource()
         {
-            if (WorldManager.FluidSimulation == null || !WorldManager.FluidSimulation.IsSimulationEnabled)
+            if (!m_enableFluidSimulation || m_fluidData == null)
                 return;
 
-            m_fluidAccumulatedTime += Time.deltaTime;
+            m_fluidData.RemoveFluidSource();
+            Debug.Log($"Removed fluid source from chunk at {transform.position}");
+        }
 
-            // Fixed timestep fluid simulation
-            while (m_fluidAccumulatedTime >= m_fluidTimeStep)
+        public bool HasActiveFluid()
+        {
+            return m_enableFluidSimulation &&
+                   m_fluidData != null &&
+                   m_fluidData.IsValid() &&
+                   m_fluidData.HasVisibleFluid();
+        }
+
+        public float GetFluidDensityAtPosition(Vector3 worldPosition)
+        {
+            if (!m_enableFluidSimulation || m_fluidData == null || !m_fluidData.IsValid())
+                return 0f;
+
+            return m_fluidData.GetFluidDensityAtPosition(worldPosition);
+        }
+
+        #endregion
+
+        #region Volumetric Rendering
+
+        private void RegisterForVolumetricRendering()
+        {
+            if (!m_enableVolumetricRendering || m_fluidData == null || !m_fluidData.IsValid())
+                return;
+
+            var volumeSize = WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions;
+            m_fluidData.RegisterForVolumetricRendering(m_chunkCoordinate, volumeSize);
+            m_registeredForVolumetricRendering = true;
+
+            Debug.Log($"Registered chunk {m_chunkCoordinate} for volumetric fluid rendering");
+        }
+
+        private void UnregisterFromVolumetricRendering()
+        {
+            if (m_registeredForVolumetricRendering)
             {
-                // Run fluid simulation step
-                WorldManager.FluidSimulation.SimulateChunkFluidStep(
-                    m_fluidTextures,
-                    m_voxelVolumeBuffer,
-                    transform.position,
-                    m_hasFluidSource ? m_fluidSource : null
-                );
+                m_fluidData?.UnregisterFromVolumetricRendering(m_chunkCoordinate);
+                m_registeredForVolumetricRendering = false;
 
-                m_fluidAccumulatedTime -= m_fluidTimeStep;
-
-                // Update volumetric rendering registration
-                UpdateVolumetricRendering();
+                Debug.Log($"Unregistered chunk {m_chunkCoordinate} from volumetric fluid rendering");
             }
         }
 
-        private void UpdateVolumetricRendering()
-        {
-            if (!m_useVolumetricRendering || !m_registeredForVolumetricRendering)
-                return;
+        #endregion
 
-            // Volumetric renderer automatically uses the latest texture data
-            // No explicit update needed - textures are bound by reference
-        }
+        #region Buffer Management
 
         private void CreateBuffers()
         {
@@ -236,25 +407,6 @@ namespace Tuntenfisch.World
             }
         }
 
-        private void CreateFluidTextures()
-        {
-            if (!m_enableFluidRendering)
-                return;
-
-            // Release existing textures
-            ReleaseFluidTextures();
-
-            // Create new fluid textures
-            var dimensions = WorldManager.VoxelConfig.VoxelVolumeConfig.NumberOfVoxels;
-            m_fluidTextures = FluidTextureFactory.CreateFluidTextures(dimensions);
-
-            // Initialize fluid textures
-            if (WorldManager.FluidSimulation != null)
-            {
-                WorldManager.FluidSimulation.InitializeChunkFluidTextures(m_fluidTextures, transform.position);
-            }
-        }
-
         private void ReleaseBuffers()
         {
             // Release solid voxel buffer
@@ -263,16 +415,11 @@ namespace Tuntenfisch.World
                 m_voxelVolumeBuffer.Release();
                 m_voxelVolumeBuffer = null;
             }
-
-            // Release fluid textures
-            ReleaseFluidTextures();
         }
 
-        private void ReleaseFluidTextures()
-        {
-            m_fluidTextures?.Release();
-            m_fluidTextures = null;
-        }
+        #endregion
+
+        #region Existing Chunk Functionality (unchanged)
 
         public void RegenerateVoxelVolume() => m_flags |= ChunkFlags.VoxelVolumeRegenerationRequested;
 
@@ -295,17 +442,14 @@ namespace Tuntenfisch.World
             GPUVoxelVolumeCSGOperation operation =
                 new GPUVoxelVolumeCSGOperation(csgOperator, csgPrimitive, materialIndex, worldToObjectMatrix);
 
-            // Add to local list for immediate processing
             m_voxelVolumeCSGOperations.Add(operation);
 
-            // Store in WorldManager's dictionary for persistence
             if (!WorldManager.Instance.ChunkHasModifications(m_chunkCoordinate))
             {
                 WorldManager.Instance.InitializeChunkModifications(m_chunkCoordinate);
             }
 
             WorldManager.Instance.AddChunkModification(m_chunkCoordinate, operation);
-
             m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
         }
 
@@ -340,6 +484,25 @@ namespace Tuntenfisch.World
             }
 
             return true;
+        }
+
+        public void ApplyStoredModifications(int3 chunkCoordinate)
+        {
+            var storedModifications = WorldManager.Instance.GetChunkModifications(chunkCoordinate);
+            if (storedModifications != null && storedModifications.Count > 0)
+            {
+                foreach (var operation in storedModifications)
+                {
+                    m_voxelVolumeCSGOperations.Add(operation);
+                }
+
+                m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
+            }
+        }
+
+        public void SetCoordinate(int3 chunkCoordinate)
+        {
+            m_chunkCoordinate = chunkCoordinate;
         }
 
         private void OnMeshGenerated(NativeArray<GPUVertex> vertices, int vertexCount, int vertexStartIndex,
@@ -391,95 +554,46 @@ namespace Tuntenfisch.World
             m_onMeshGeneratedDelegate = OnMeshGenerated;
         }
 
-        public void ApplyStoredModifications(int3 chunkCoordinate)
-        {
-            var storedModifications = WorldManager.Instance.GetChunkModifications(chunkCoordinate);
-            if (storedModifications != null && storedModifications.Count > 0)
-            {
-                // Apply all stored modifications at once
-                foreach (var operation in storedModifications)
-                {
-                    m_voxelVolumeCSGOperations.Add(operation);
-                }
-
-                m_flags |= ChunkFlags.CSGOperationPerformed | ChunkFlags.MeshRegenerationRequested;
-            }
-        }
-
         private void OnMaterialConfigChanged()
         {
             ApplyRenderMaterial();
         }
 
-        public void SetCoordinate(int3 chunkCoordinate)
-        {
-            m_chunkCoordinate = chunkCoordinate;
-        }
-
         private void ApplyRenderMaterial() =>
             m_meshRenderer.material = WorldManager.VoxelConfig.MaterialConfig.RenderMaterial;
 
-        public void AddFluidSource(Vector3 worldPosition, Vector3 velocity, float radius, float amount,
-            MaterialIndex material = MaterialIndex.Water)
+        #endregion
+
+        #region Debug Methods
+
+        public void RunStep()
         {
-            if (!m_enableFluidRendering || m_fluidTextures == null || !m_fluidTextures.IsValid())
-                return;
-
-            m_hasFluidSource = true;
-            m_fluidSource = new FluidSourceData(worldPosition, velocity, radius, amount, material);
-
-            // Immediately add the fluid source via simulation manager
-            if (WorldManager.FluidSimulation != null)
+            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
             {
-                WorldManager.FluidSimulation.AddFluidSource(m_fluidTextures, m_fluidSource);
+                RunFluidSimulationStep();
+                Debug.Log($"Manual fluid simulation step completed for chunk at {transform.position}");
             }
         }
 
-        public void RemoveFluidSource()
+        public void DebugFluidState()
         {
-            if (!m_enableFluidRendering)
-                return;
-
-            m_hasFluidSource = false;
-            m_fluidSource = null;
+            if (m_fluidData != null)
+            {
+                m_fluidData.DebugOutput();
+            }
+            else
+            {
+                Debug.Log($"No fluid data for chunk at {transform.position}");
+            }
         }
 
         public void RegenerateFluidMesh()
         {
-            // Not needed for volumetric rendering
+            // Not needed for volumetric rendering, but kept for compatibility
+            Debug.Log($"RegenerateFluidMesh called for chunk at {transform.position} - using volumetric rendering");
         }
 
-        private void RegisterForVolumetricRendering()
-        {
-            if (!m_useVolumetricRendering || m_fluidTextures == null || !m_fluidTextures.IsValid())
-                return;
-
-            var volumeSize = WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions;
-            m_fluidTextures.RegisterForVolumetricRendering(m_chunkCoordinate, transform.position, volumeSize);
-            m_registeredForVolumetricRendering = true;
-        }
-
-        private void UnregisterFromVolumetricRendering()
-        {
-            if (m_registeredForVolumetricRendering)
-            {
-                VolumetricFluidExtensions.UnregisterFromVolumetricRendering(m_chunkCoordinate);
-                m_registeredForVolumetricRendering = false;
-            }
-        }
-
-        private void ResetFluidState()
-        {
-            m_hasFluidSource = false;
-            m_fluidSource = null;
-            m_fluidAccumulatedTime = 0f;
-        }
-
-        public bool HasActiveFluid()
-        {
-            return m_enableFluidRendering && m_fluidTextures != null && m_fluidTextures.IsValid() &&
-                   m_hasFluidSource;
-        }
+        #endregion
 
         [Flags]
         private enum ChunkFlags
@@ -489,19 +603,6 @@ namespace Tuntenfisch.World
             MeshRegenerationRequested = 4,
             IsBakingMesh = 8,
             FluidBoundaryUpdateRequired = 16
-        }
-
-        public void RunStep()
-        {
-            if (m_enableFluidRendering && m_fluidTextures != null && m_fluidTextures.IsValid())
-            {
-                WorldManager.FluidSimulation.SimulateChunkFluidStep(
-                    m_fluidTextures,
-                    m_voxelVolumeBuffer,
-                    transform.position,
-                    m_hasFluidSource ? m_fluidSource : null
-                );
-            }
         }
     }
 }

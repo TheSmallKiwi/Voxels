@@ -6,161 +6,264 @@ using UnityEngine.Rendering;
 
 namespace Tuntenfisch.Fluids
 {
+    /// <summary>
+    /// Updated ChunkFluidData that works with the texture-based fluid simulation system.
+    /// This class now wraps ChunkFluidData and provides additional chunk-specific functionality.
+    /// </summary>
     [System.Serializable]
     public class ChunkFluidData
     {
-        public ComputeBuffer FluidVolumeBuffer { get; set; }
-        public ComputeBuffer FluidVolumeBackBuffer { get; set; }
-        public ComputeBuffer VoxelVolumeBuffer { get; set; }
-        public ComputeBuffer TempVoxelVolumeBuffer { get; set; }
+        // Core fluid textures (managed by FluidTextureFactory)
+        public ChunkFluidTextures FluidTextures { get; set; }
+        public ComputeBuffer SolidVoxelBuffer => m_solidVoxelBuffer;
+        
+        // Chunk positioning and state
         public float3 WorldPosition { get; set; }
         public bool HasFluidSource => FluidSource is { IsActive: true };
         public FluidSourceData FluidSource { get; set; }
         
-        public GraphicsFence Fence { get; set; }
-
-        // CommandBuffer execution state
-        public CommandBuffer CommandBuffer { get; private set; }
-        private Queue<System.Action> m_pendingActions = new Queue<System.Action>();
-        private bool m_commandsExecuted = false;
-        private float m_commandStartTime = 0f;
-        private const float COMMAND_TIMEOUT = 0.1f; // Maximum time to consider commands as "active"
+        // Simulation timing and state
+        private float m_lastSimulationTime = 0f;
+        private float m_accumulatedTime = 0f;
+        private bool m_isSimulationActive = false;
+        private int m_activeFluidVoxels = 0;
+        
+        // Performance tracking
+        private Queue<float> m_frameTimeHistory = new Queue<float>();
+        private ComputeBuffer m_solidVoxelBuffer;
+        private const int MAX_FRAME_HISTORY = 30;
+        private const float SIMULATION_TIMEOUT = 0.1f;
 
         public bool IsValid()
         {
-            return FluidVolumeBuffer != null && FluidVolumeBackBuffer != null;
+            return FluidTextures != null && FluidTextures.IsValid();
         }
 
-        public void SwapBuffers()
+        public void Initialize(int3 dimensions, float3 worldPosition, ComputeBuffer solidVoxels)
         {
-            (FluidVolumeBuffer, FluidVolumeBackBuffer) = (FluidVolumeBackBuffer, FluidVolumeBuffer);
+            // Store solid voxel buffer
+            m_solidVoxelBuffer = solidVoxels;
+            
+            WorldPosition = worldPosition;
+            
+            // Create fluid textures using the factory
+            FluidTextures = FluidTextureFactory.CreateFluidTextures(dimensions);
+            
+            // Reset state
+            ResetSimulationState();
+            
+            Debug.Log($"Initialized ChunkFluidData at {WorldPosition} with dimensions {dimensions}");
         }
 
-        public void InitializeCommandBuffer()
+        public void Cleanup()
         {
-            CleanupCommandBuffer();
-            CommandBuffer = new CommandBuffer { name = $"FluidSimulation_{WorldPosition}" };
-            m_pendingActions.Clear();
-            m_commandsExecuted = false;
-            m_commandStartTime = Time.time;
+            FluidTextures?.Release();
+            FluidTextures = null;
+            
+            FluidSource?.Deactivate();
+            FluidSource = null;
+            
+            ResetSimulationState();
+            
+            Debug.Log($"Cleaned up ChunkFluidData at {WorldPosition}");
         }
 
-        public void CleanupCommandBuffer()
+        private void ResetSimulationState()
         {
-            CommandBuffer?.Release();
-            CommandBuffer = null;
-            m_pendingActions?.Clear();
-            m_commandsExecuted = false;
-            m_commandStartTime = 0f;
+            m_lastSimulationTime = 0f;
+            m_accumulatedTime = 0f;
+            m_isSimulationActive = false;
+            m_activeFluidVoxels = 0;
+            m_frameTimeHistory.Clear();
         }
 
-        public void AddBufferSwapCommand()
+        public void AddFluidSource(Vector3 position, Vector3 velocity, float radius, float amount, MaterialIndex material = MaterialIndex.Water)
         {
-            m_pendingActions.Enqueue(() => SwapBuffers());
+            FluidSource = new FluidSourceData(position, velocity, radius, amount, material);
+            m_isSimulationActive = true;
+            
+            Debug.Log($"Added fluid source to chunk at {WorldPosition}: {FluidSource}");
         }
 
-        public bool ExecuteNextCommand()
+        public void RemoveFluidSource()
         {
-            // Execute the main CommandBuffer first time
-            if (!m_commandsExecuted && CommandBuffer != null)
+            FluidSource?.Deactivate();
+            FluidSource = null;
+            
+            Debug.Log($"Removed fluid source from chunk at {WorldPosition}");
+        }
+
+        public void UpdateSimulationTiming(float deltaTime)
+        {
+            m_accumulatedTime += deltaTime;
+            
+            // Track frame times for performance monitoring
+            m_frameTimeHistory.Enqueue(deltaTime);
+            if (m_frameTimeHistory.Count > MAX_FRAME_HISTORY)
             {
-                Graphics.ExecuteCommandBuffer(CommandBuffer);
-                m_commandsExecuted = true;
-                return true; // Still has pending CPU actions
+                m_frameTimeHistory.Dequeue();
             }
             
-            // Execute pending CPU-side actions (like buffer swaps)
-            if (m_pendingActions.Count > 0)
+            // Update activity state
+            if (HasFluidSource || m_activeFluidVoxels > 0)
             {
-                var action = m_pendingActions.Dequeue();
-                action?.Invoke();
-                return m_pendingActions.Count > 0; // Return true if more actions remain
+                m_isSimulationActive = true;
+                m_lastSimulationTime = Time.time;
             }
-
-            return false; // No more commands to execute
+            else if (Time.time - m_lastSimulationTime > SIMULATION_TIMEOUT)
+            {
+                m_isSimulationActive = false;
+            }
         }
 
-        public bool HasActiveCommands()
+        public bool ShouldRunSimulation(float fixedTimeStep)
         {
-            // Check if we have a CommandBuffer that hasn't been executed yet
-            if (!m_commandsExecuted && CommandBuffer != null)
-                return true;
-
-            // Check if we have pending CPU actions
-            if (m_pendingActions.Count > 0)
-                return true;
-
-            // Use timeout to handle any GPU execution time
-            if (m_commandsExecuted && (Time.time - m_commandStartTime) < COMMAND_TIMEOUT)
-                return true;
-
-            return false;
+            return m_isSimulationActive && m_accumulatedTime >= fixedTimeStep;
         }
 
-        public bool HasPendingActions()
+        public void ConsumeSimulationTime(float fixedTimeStep)
         {
-            return m_pendingActions.Count > 0;
+            m_accumulatedTime -= fixedTimeStep;
+            m_accumulatedTime = Mathf.Max(0f, m_accumulatedTime); // Prevent negative accumulation
+        }
+
+        public void UpdateActiveFluidVoxelCount(int count)
+        {
+            m_activeFluidVoxels = count;
+            
+            // If we have active fluid, mark simulation as active
+            if (count > 0)
+            {
+                m_isSimulationActive = true;
+                m_lastSimulationTime = Time.time;
+            }
+        }
+
+        public bool IsSimulationActive()
+        {
+            return m_isSimulationActive;
+        }
+
+        public bool IsSimulationSettled()
+        {
+            return !m_isSimulationActive && !HasFluidSource && m_activeFluidVoxels == 0;
+        }
+
+        public float GetSimulationProgress()
+        {
+            if (!m_isSimulationActive)
+                return 1.0f;
+                
+            // Simple progress based on time since last activity
+            float timeSinceActivity = Time.time - m_lastSimulationTime;
+            return Mathf.Clamp01(timeSinceActivity / SIMULATION_TIMEOUT);
+        }
+
+        public float GetAverageFrameTime()
+        {
+            if (m_frameTimeHistory.Count == 0)
+                return 0f;
+                
+            float total = 0f;
+            foreach (float time in m_frameTimeHistory)
+            {
+                total += time;
+            }
+            return total / m_frameTimeHistory.Count;
         }
 
         public void DebugOutput()
         {
             Debug.Log($"=== ChunkFluidData Debug ===");
             Debug.Log($"World Position: {WorldPosition}");
-            Debug.Log($"Fluid Volume Buffer: {FluidVolumeBuffer?.count ?? 0} elements");
-            Debug.Log($"Fluid Volume Back Buffer: {FluidVolumeBackBuffer?.count ?? 0} elements");
-            Debug.Log($"Voxel Volume Buffer: {VoxelVolumeBuffer?.count ?? 0} elements");
-            Debug.Log($"Temp Voxel Volume Buffer: {TempVoxelVolumeBuffer?.count ?? 0} elements");
+            Debug.Log($"Fluid Textures Valid: {IsValid()}");
             Debug.Log($"Has Fluid Source: {HasFluidSource}");
-            Debug.Log($"Fluid Source: {FluidSource?.Position ?? Vector3.zero} (radius: {FluidSource?.Radius ?? 0f})");
-            Debug.Log($"Commands Executed: {m_commandsExecuted}");
-            Debug.Log($"Pending Actions: {m_pendingActions?.Count ?? 0}");
-            Debug.Log($"Has Active Commands: {HasActiveCommands()}");
-            Debug.Log($"Command Start Time: {m_commandStartTime}");
-            Debug.Log($"Time Since Command Start: {Time.time - m_commandStartTime}");
+            Debug.Log($"Fluid Source: {FluidSource?.ToString() ?? "None"}");
+            Debug.Log($"Simulation Active: {m_isSimulationActive}");
+            Debug.Log($"Active Fluid Voxels: {m_activeFluidVoxels}");
+            Debug.Log($"Accumulated Time: {m_accumulatedTime:F3}s");
+            Debug.Log($"Last Simulation Time: {m_lastSimulationTime:F3}s");
+            Debug.Log($"Average Frame Time: {GetAverageFrameTime():F4}s");
+            Debug.Log($"Simulation Progress: {GetSimulationProgress():F2}");
+            Debug.Log($"Is Settled: {IsSimulationSettled()}");
+            
+            if (FluidTextures != null)
+            {
+                Debug.Log($"Velocity Texture: {FluidTextures.VelocityRead?.width}x{FluidTextures.VelocityRead?.height}x{FluidTextures.VelocityRead?.volumeDepth}");
+                Debug.Log($"Density Texture: {FluidTextures.DensityRead?.width}x{FluidTextures.DensityRead?.height}x{FluidTextures.DensityRead?.volumeDepth}");
+                Debug.Log($"Pressure Texture: {FluidTextures.PressureRead?.width}x{FluidTextures.PressureRead?.height}x{FluidTextures.PressureRead?.volumeDepth}");
+            }
+            
             Debug.Log($"===========================");
         }
 
-        // Helper method to force completion (for debugging)
+        // Helper methods for integration with existing systems
+        public void RegisterForVolumetricRendering(int3 chunkCoordinate, Vector3 volumeSize)
+        {
+            if (IsValid())
+            {
+                FluidTextures.RegisterForVolumetricRendering(chunkCoordinate, WorldPosition, volumeSize);
+            }
+        }
+
+        public void UnregisterFromVolumetricRendering(int3 chunkCoordinate)
+        {
+            VolumetricFluidExtensions.UnregisterFromVolumetricRendering(chunkCoordinate);
+        }
+
+        // Method to check if chunk needs fluid simulation update
+        public bool NeedsSimulationUpdate()
+        {
+            return m_isSimulationActive || HasFluidSource;
+        }
+
+        // Get fluid density at a specific world position (for external queries)
+        public float GetFluidDensityAtPosition(Vector3 worldPosition)
+        {
+            if (!IsValid())
+                return 0f;
+                
+            // This would require implementing a sampling method that reads from the density texture
+            // For now, return a simple check if we have any fluid activity
+            return m_isSimulationActive ? 1f : 0f;
+        }
+
+        // Check if the chunk has any visible fluid
+        public bool HasVisibleFluid()
+        {
+            return m_activeFluidVoxels > 0 || HasFluidSource;
+        }
+
+        // Force complete simulation step (for debugging)
         public void ForceComplete()
         {
-            m_commandsExecuted = true;
-            m_pendingActions.Clear();
-            m_commandStartTime = 0f;
+            m_accumulatedTime = 0f;
+            m_isSimulationActive = false;
+            Debug.Log($"Force completed simulation for chunk at {WorldPosition}");
         }
 
-        // Helper method to check if simulation should be considered "settled"
-        public bool IsSimulationSettled()
+        // Estimate memory usage for debugging
+        public long GetEstimatedMemoryUsage()
         {
-            // This could be expanded to check actual fluid activity
-            // For now, just check if commands are complete and no fluid source is active
-            return !HasActiveCommands() && !HasFluidSource;
-        }
-
-        // Get simulation progress (0.0 to 1.0)
-        public float GetSimulationProgress()
-        {
-            if (!m_commandsExecuted && CommandBuffer != null)
-                return 0.0f;
-
-            if (m_pendingActions.Count > 0)
-            {
-                // Estimate progress based on remaining actions
-                // This is a rough estimate - in practice you might want more sophisticated tracking
-                return 0.8f; // GPU work done, CPU actions remain
-            }
-
-            if (HasActiveCommands())
-            {
-                // Use timeout to estimate progress
-                float timeElapsed = Time.time - m_commandStartTime;
-                float progress = Mathf.Clamp01(timeElapsed / COMMAND_TIMEOUT);
-                return 0.8f + (0.2f * progress); // 80% to 100%
-            }
-
-            return 1.0f; // Complete
+            if (!IsValid())
+                return 0;
+                
+            var velTex = FluidTextures.VelocityRead;
+            if (velTex == null)
+                return 0;
+                
+            // Rough estimate: 7 textures (vel read/write, density read/write, pressure read/write, divergence)
+            // Velocity is ARGB32 (16 bytes), others are RFloat (4 bytes)
+            long velocitySize = velTex.width * velTex.height * velTex.volumeDepth * 16 * 2; // read + write
+            long otherSize = velTex.width * velTex.height * velTex.volumeDepth * 4 * 5;     // density, pressure, divergence
+            
+            return velocitySize + otherSize;
         }
     }
 
+    /// <summary>
+    /// Updated FluidSourceData to match the texture-based system
+    /// </summary>
     [System.Serializable]
     public class FluidSourceData
     {
@@ -170,8 +273,11 @@ namespace Tuntenfisch.Fluids
         public float Amount;
         public MaterialIndex Material;
         public bool IsActive;
+        public float StartTime;
+        public float Duration; // -1 for infinite
 
-        public FluidSourceData(Vector3 position, Vector3 velocity, float radius, float amount, MaterialIndex material = MaterialIndex.Water)
+        public FluidSourceData(Vector3 position, Vector3 velocity, float radius, float amount, 
+            MaterialIndex material = MaterialIndex.Water, float duration = -1f)
         {
             Position = position;
             Velocity = velocity;
@@ -179,6 +285,8 @@ namespace Tuntenfisch.Fluids
             Amount = amount;
             Material = material;
             IsActive = true;
+            StartTime = Time.time;
+            Duration = duration;
         }
 
         public void Deactivate()
@@ -186,9 +294,37 @@ namespace Tuntenfisch.Fluids
             IsActive = false;
         }
 
+        public bool ShouldBeActive()
+        {
+            if (!IsActive)
+                return false;
+                
+            if (Duration > 0 && Time.time - StartTime > Duration)
+            {
+                IsActive = false;
+                return false;
+            }
+            
+            return true;
+        }
+
+        public float GetAge()
+        {
+            return Time.time - StartTime;
+        }
+
+        public float GetRemainingTime()
+        {
+            if (Duration < 0)
+                return float.MaxValue;
+                
+            return Mathf.Max(0f, Duration - GetAge());
+        }
+
         public override string ToString()
         {
-            return $"FluidSource(pos:{Position}, vel:{Velocity}, radius:{Radius}, amount:{Amount}, material:{Material}, active:{IsActive})";
+            return $"FluidSource(pos:{Position}, vel:{Velocity}, radius:{Radius}, amount:{Amount}, " +
+                   $"material:{Material}, active:{IsActive}, age:{GetAge():F1}s)";
         }
     }
 }

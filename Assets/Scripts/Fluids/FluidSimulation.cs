@@ -14,8 +14,9 @@ namespace Tuntenfisch.Fluids
     [RequireComponent(typeof(VoxelConfig))]
     public class FluidSimulation : MonoBehaviour
     {
-        [Header("Simulation Settings")]
-        [SerializeField] private bool m_enableSimulation = true;
+        [Header("Simulation Settings")] [SerializeField]
+        private bool m_enableSimulation = true;
+
         [SerializeField] private float m_timeStep = 0.016f;
         [SerializeField] private int m_pressureIterations = 15;
         [SerializeField] private float m_viscosity = 0.01f;
@@ -81,140 +82,141 @@ namespace Tuntenfisch.Fluids
         /// <summary>
         /// Initialize fluid textures for a chunk
         /// </summary>
-        public void InitializeChunkFluidTextures(ChunkFluidTextures fluidTextures, float3 chunkWorldPosition)
+        public void InitializeChunkFluidTextures(ChunkFluidData fluidData)
         {
-            if (!IsSimulationEnabled || !fluidTextures.IsValid())
+            if (!IsSimulationEnabled || !fluidData.IsValid())
                 return;
 
-            SetGlobalParameters(chunkWorldPosition);
-            BindTexturesForKernel(m_initializeFluidKernel, fluidTextures, null, true);
-            
+            SetGlobalParameters(fluidData.WorldPosition);
+            BindTexturesForKernel(m_initializeFluidKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
+
             m_fluidCompute.Dispatch(m_initializeFluidKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
         /// <summary>
         /// Run a complete simulation step for a chunk
         /// </summary>
-        public void SimulateChunkFluidStep(ChunkFluidTextures fluidTextures, ComputeBuffer solidVoxelBuffer, 
-            float3 chunkWorldPosition, FluidSourceData fluidSource = null)
+        public void SimulateChunkFluidStep(ChunkFluidData fluidData)
         {
-            if (!IsSimulationEnabled || !fluidTextures.IsValid())
+            if (!IsSimulationEnabled || !fluidData.IsValid())
                 return;
 
-            SetGlobalParameters(chunkWorldPosition);
+            SetGlobalParameters(fluidData.WorldPosition);
 
             // 1. Update boundaries from solid geometry
-            UpdateBoundariesFromSolids(fluidTextures, solidVoxelBuffer);
+            UpdateBoundariesFromSolids(fluidData);
 
             // 2. Add fluid sources if present
-            if (fluidSource != null)
+            if (fluidData.FluidSource != null)
             {
-                AddFluidSource(fluidTextures, fluidSource);
+                AddFluidSource(fluidData);
             }
 
             // 3. Advection step
-            ExecuteAdvection(fluidTextures);
+            ExecuteAdvection(fluidData);
 
             // 4. Diffusion (viscosity) - optional
             if (m_viscosity > 0.001f)
             {
-                ExecuteDiffusion(fluidTextures);
+                ExecuteDiffusion(fluidData);
             }
 
             // 5. Pressure projection (incompressibility)
-            ExecutePressureProjection(fluidTextures);
+            ExecutePressureProjection(fluidData);
 
             // 6. Apply boundary conditions
-            ApplyBoundaryConditions(fluidTextures);
+            ApplyBoundaryConditions(fluidData);
 
             // 7. Swap read/write textures
-            fluidTextures.SwapTextures();
+            fluidData.FluidTextures.SwapTextures();
         }
 
         /// <summary>
         /// Update fluid boundaries based on solid voxel geometry
         /// </summary>
-        public void UpdateBoundariesFromSolids(ChunkFluidTextures fluidTextures, ComputeBuffer solidVoxelBuffer)
+        public void UpdateBoundariesFromSolids(ChunkFluidData fluidData)
         {
-            if (!IsSimulationEnabled || !fluidTextures.IsValid())
+            if (!IsSimulationEnabled || !fluidData.IsValid())
                 return;
 
-            BindTexturesForKernel(m_updateBoundariesFromSolidsKernel, fluidTextures, solidVoxelBuffer, true);
+            BindTexturesForKernel(m_updateBoundariesFromSolidsKernel, fluidData.FluidTextures,
+                fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_updateBoundariesFromSolidsKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
         /// <summary>
         /// Add a fluid source to the simulation
         /// </summary>
-        public void AddFluidSource(ChunkFluidTextures fluidTextures, FluidSourceData sourceData)
+        public void AddFluidSource(ChunkFluidData fluidData)
         {
-            if (!IsSimulationEnabled || !fluidTextures.IsValid())
+            if (!IsSimulationEnabled || !fluidData.IsValid())
                 return;
 
-            SetFluidSourceParameters(sourceData);
-            BindTexturesForKernel(m_addSourcesKernel, fluidTextures, null, true);
-            
+            SetFluidSourceParameters(fluidData.FluidSource);
+            BindTexturesForKernel(m_addSourcesKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
+
             m_fluidCompute.Dispatch(m_addSourcesKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
-        private void ExecuteAdvection(ChunkFluidTextures fluidTextures)
+        private void ExecuteAdvection(ChunkFluidData fluidData)
         {
-            BindTexturesForKernel(m_advectionKernel, fluidTextures, null, true);
+            BindTexturesForKernel(m_advectionKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_advectionKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
-        private void ExecuteDiffusion(ChunkFluidTextures fluidTextures)
+        private void ExecuteDiffusion(ChunkFluidData fluidData)
         {
-            BindTexturesForKernel(m_diffusionKernel, fluidTextures, null, true);
+            BindTexturesForKernel(m_diffusionKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_diffusionKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
-            fluidTextures.SwapTextures(); // Swap after diffusion
+            fluidData.FluidTextures.SwapTextures(); // Swap after diffusion
         }
 
-        private void ExecutePressureProjection(ChunkFluidTextures fluidTextures)
+        private void ExecutePressureProjection(ChunkFluidData fluidData)
         {
             var numberOfVoxels = m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
+            var textures = fluidData.FluidTextures;
 
             // Compute divergence
-            BindTexturesForKernel(m_computeDivergenceKernel, fluidTextures, null, false);
+            BindTexturesForKernel(m_computeDivergenceKernel, textures, fluidData.SolidVoxelBuffer, false);
             m_fluidCompute.Dispatch(m_computeDivergenceKernel, numberOfVoxels);
 
             // Iterative pressure solve
             for (int i = 0; i < m_pressureIterations; i++)
             {
-                BindTexturesForKernel(m_pressureSolveKernel, fluidTextures, null, false);
+                BindTexturesForKernel(m_pressureSolveKernel, textures, fluidData.SolidVoxelBuffer, false);
                 m_fluidCompute.Dispatch(m_pressureSolveKernel, numberOfVoxels);
-                fluidTextures.SwapPressureTextures(); // Only swap pressure textures
+                textures.SwapPressureTextures(); // Only swap pressure textures
             }
 
             // Apply pressure gradient to velocity
-            BindTexturesForKernel(m_pressureProjectionKernel, fluidTextures, null, true);
+            BindTexturesForKernel(m_pressureProjectionKernel, textures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_pressureProjectionKernel, numberOfVoxels);
         }
 
-        private void ApplyBoundaryConditions(ChunkFluidTextures fluidTextures)
+        private void ApplyBoundaryConditions(ChunkFluidData fluidData)
         {
-            BindTexturesForKernel(m_applyBoundariesKernel, fluidTextures, null, true);
+            BindTexturesForKernel(m_applyBoundariesKernel, fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
             m_fluidCompute.Dispatch(m_applyBoundariesKernel, m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels);
         }
 
-        private void BindTexturesForKernel(int kernelId, ChunkFluidTextures fluidTextures, 
+        private void BindTexturesForKernel(int kernelId, ChunkFluidTextures fluidData,
             ComputeBuffer solidVoxelBuffer, bool bindWriteTextures)
         {
             // Bind read textures
-            m_fluidCompute.SetTexture(kernelId, "velocityRead", fluidTextures.VelocityRead);
-            m_fluidCompute.SetTexture(kernelId, "densityRead", fluidTextures.DensityRead);
-            m_fluidCompute.SetTexture(kernelId, "pressureRead", fluidTextures.PressureRead);
+            m_fluidCompute.SetTexture(kernelId, "velocityRead", fluidData.VelocityRead);
+            m_fluidCompute.SetTexture(kernelId, "densityRead", fluidData.DensityRead);
+            m_fluidCompute.SetTexture(kernelId, "pressureRead", fluidData.PressureRead);
 
             if (bindWriteTextures)
             {
                 // Bind write textures
-                m_fluidCompute.SetTexture(kernelId, "velocityWrite", fluidTextures.VelocityWrite);
-                m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidTextures.DensityWrite);
-                m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidTextures.PressureWrite);
+                m_fluidCompute.SetTexture(kernelId, "velocityWrite", fluidData.VelocityWrite);
+                m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidData.DensityWrite);
+                m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidData.PressureWrite);
             }
 
             // Bind divergence texture (always writable)
-            m_fluidCompute.SetTexture(kernelId, "divergence", fluidTextures.Divergence);
+            m_fluidCompute.SetTexture(kernelId, "divergence", fluidData.Divergence);
 
             // Bind solid voxel buffer if provided
             if (solidVoxelBuffer != null)
@@ -235,7 +237,7 @@ namespace Tuntenfisch.Fluids
             m_fluidCompute.SetFloat("velocityDissipation", m_velocityDissipation);
 
             // Volume parameters
-            m_fluidCompute.SetInts("dimensions", volumeConfig.NumberOfVoxels.x, 
+            m_fluidCompute.SetInts("dimensions", volumeConfig.NumberOfVoxels.x,
                 volumeConfig.NumberOfVoxels.y, volumeConfig.NumberOfVoxels.z);
             m_fluidCompute.SetFloat("voxelSize", volumeConfig.VoxelSpacing);
         }
@@ -265,10 +267,10 @@ namespace Tuntenfisch.Fluids
 
         public bool IsValid()
         {
-            return VelocityRead != null && VelocityWrite != null &&
-                   DensityRead != null && DensityWrite != null &&
-                   PressureRead != null && PressureWrite != null &&
-                   Divergence != null;
+            return VelocityRead && VelocityWrite &&
+                   DensityRead && DensityWrite &&
+                   PressureRead && PressureWrite &&
+                   Divergence;
         }
 
         public void SwapTextures()
@@ -306,29 +308,6 @@ namespace Tuntenfisch.Fluids
     }
 
     /// <summary>
-    /// Data structure for fluid sources
-    /// </summary>
-    [System.Serializable]
-    public class FluidSourceData
-    {
-        public Vector3 Position;
-        public Vector3 Velocity;
-        public float Radius;
-        public float Amount;
-        public MaterialIndex Material;
-
-        public FluidSourceData(Vector3 position, Vector3 velocity, float radius, float amount, 
-            MaterialIndex material = MaterialIndex.Water)
-        {
-            Position = position;
-            Velocity = velocity;
-            Radius = radius;
-            Amount = amount;
-            Material = material;
-        }
-    }
-
-    /// <summary>
     /// Helper class for creating fluid simulation textures
     /// </summary>
     public static class FluidTextureFactory
@@ -355,7 +334,8 @@ namespace Tuntenfisch.Fluids
             return textures;
         }
 
-        private static RenderTexture CreateTexture3D(int3 dimensions, RenderTextureFormat format, bool enableRandomWrite)
+        private static RenderTexture CreateTexture3D(int3 dimensions, RenderTextureFormat format,
+            bool enableRandomWrite)
         {
             var texture = new RenderTexture(dimensions.x, dimensions.y, 0, format)
             {
