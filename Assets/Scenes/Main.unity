@@ -133,6 +133,7 @@ GameObject:
   - component: {fileID: 337836007}
   - component: {fileID: 337836006}
   - component: {fileID: 337836005}
+  - component: {fileID: 337836012}
   - component: {fileID: 337836010}
   - component: {fileID: 337836011}
   m_Layer: 0
@@ -267,7 +268,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 337836003}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 146275a8cf684fcc85f95022d52e2f73, type: 3}
   m_Name: 
@@ -283,10 +284,10 @@ MonoBehaviour:
   m_textureDisplaySize: {x: 256, y: 256}
   m_textureDisplayOffset: {x: 10, y: 10}
   m_testSourceOffset: {x: 0, y: 20, z: 20}
-  m_testSourceRadius: 4
+  m_testSourceRadius: 20
   m_testSourceAmount: 10
   m_testSourceVelocity: {x: 0, y: 2, z: 0}
-  m_testSourceDuration: 10
+  m_testSourceDuration: 20
   m_currentDensitySlice: {fileID: 0}
   m_currentVelocitySlice: {fileID: 0}
   m_currentPressureSlice: {fileID: 0}
@@ -294,6 +295,28 @@ MonoBehaviour:
   m_maxDensityValue: 0
   m_maxVelocityMagnitude: 0
   m_maxPressureValue: 0
+--- !u!114 &337836012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 337836003}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09d6e5aeaeb23984c8cf0b1a98c9537b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_volumetricFluidMaterial: {fileID: 2100000, guid: 38c84c4f10d35c9459ce6fb8852c14c5, type: 2}
+  m_maxRaySteps: 128
+  m_stepSize: 0.5
+  m_densityThreshold: 0.01
+  m_absorptionStrength: 1
+  m_scatteringStrength: 0.5
+  m_fluidColor: {r: 0.2, g: 0.6, b: 1, a: 1}
+  m_enableTemporalReprojection: 0
+  m_enableDepthCulling: 0
+  m_maxRenderDistance: 100
 --- !u!1 &430985030
 GameObject:
   m_ObjectHideFlags: 0

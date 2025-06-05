@@ -241,7 +241,7 @@ namespace Tuntenfisch.World
             // Extract density slice
             if (m_showDensityTexture)
             {
-                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.DensityRead);
+                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.DensityWrite);
                 m_textureSliceCompute.SetTexture(m_extractSliceKernel, "TargetTexture2D", m_densitySliceTexture);
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", m_densityMultiplier);
@@ -258,7 +258,7 @@ namespace Tuntenfisch.World
             // Extract velocity slice
             if (m_showVelocityTexture)
             {
-                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.VelocityRead);
+                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.VelocityWrite);
                 m_textureSliceCompute.SetTexture(m_extractSliceKernel, "TargetTexture2D", m_velocitySliceTexture);
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", m_velocityScale);
@@ -275,7 +275,7 @@ namespace Tuntenfisch.World
             // Extract pressure slice
             if (m_showPressureTexture)
             {
-                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.PressureRead);
+                m_textureSliceCompute.SetTexture(m_extractSliceKernel, "SourceTexture3D", fluidTextures.PressureWrite);
                 m_textureSliceCompute.SetTexture(m_extractSliceKernel, "TargetTexture2D", m_pressureSliceTexture);
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", 1.0f);

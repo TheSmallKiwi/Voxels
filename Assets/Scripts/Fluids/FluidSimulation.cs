@@ -186,15 +186,17 @@ namespace Tuntenfisch.Fluids
         /// </summary>
         public IRequest InitializeChunkAsync(ChunkFluidData fluidData, System.Action onComplete = null)
         {
-            return RequestSimulationAsync(fluidData, (success) =>
-            {
-                if (success)
-                {
-                    InitializeFluidTexturesImmediate(fluidData);
-                }
-
-                onComplete?.Invoke();
-            });
+            InitializeFluidTexturesImmediate(fluidData);
+            return null;
+            // return RequestSimulationAsync(fluidData, (success) =>
+            // {
+            //     if (success)
+            //     {
+            //         
+            //     }
+            //
+            //     onComplete?.Invoke();
+            // });
         }
 
         /// <summary>
@@ -202,15 +204,17 @@ namespace Tuntenfisch.Fluids
         /// </summary>
         public IRequest UpdateBoundariesAsync(ChunkFluidData fluidData, System.Action onComplete = null)
         {
-            return RequestSimulationAsync(fluidData, (success) =>
-            {
-                if (success)
-                {
-                    UpdateBoundariesFromSolidsImmediate(fluidData);
-                }
-
-                onComplete?.Invoke();
-            });
+            UpdateBoundariesFromSolidsImmediate(fluidData);
+            return null;
+            // return RequestSimulationAsync(fluidData, (success) =>
+            // {
+            //     if (success)
+            //     {
+            //         
+            //     }
+            //
+            //     onComplete?.Invoke();
+            // });
         }
 
         private void DispatchWorker(Worker.Task task)
@@ -296,13 +300,6 @@ namespace Tuntenfisch.Fluids
                 m_fluidCompute.SetTexture(kernelId, "velocityWrite", fluidData.VelocityWrite);
                 m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidData.DensityWrite);
                 m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidData.PressureWrite);
-            }
-            else
-            {
-                // Bind read textures (always writable)
-                m_fluidCompute.SetTexture(kernelId, "velocityWrite", fluidData.VelocityRead);
-                m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidData.DensityRead);
-                m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidData.PressureRead);           
             }
 
             // Bind divergence texture (always writable)
@@ -405,7 +402,9 @@ namespace Tuntenfisch.Fluids
                     await ExecuteSimulationPipeline(fluidData, cancellationToken);
 
                     // Swap textures to finalize the step
-                    fluidData.FluidTextures.SwapTextures();
+                    // fluidData.FluidTextures.SwapTextures();
+                    
+                    // Debug.Log("Swapped Textures");
 
                     m_simulationResult = true;
 
@@ -434,13 +433,15 @@ namespace Tuntenfisch.Fluids
             {
                 var numberOfVoxels = m_parent.m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
 
-                // 1. Update boundaries from solid geometry
-                await ExecuteComputeStepAsync("UpdateBoundaries", () =>
-                {
-                    m_parent.BindTexturesForKernel(m_parent.m_updateBoundariesFromSolidsKernel,
-                        fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
-                    m_parent.m_fluidCompute.Dispatch(m_parent.m_updateBoundariesFromSolidsKernel, numberOfVoxels);
-                }, cancellationToken);
+                // // 1. Update boundaries from solid geometry
+                // await ExecuteComputeStepAsync("UpdateBoundaries", () =>
+                // {
+                //     m_parent.BindTexturesForKernel(m_parent.m_updateBoundariesFromSolidsKernel,
+                //         fluidData.FluidTextures, fluidData.SolidVoxelBuffer, false);
+                //     m_parent.m_fluidCompute.Dispatch(m_parent.m_updateBoundariesFromSolidsKernel, numberOfVoxels);
+                // }, cancellationToken);
+                //
+                // Debug.Log("UpdatedBoundaries");
 
                 // 2. Add fluid sources if present
                 if (fluidData.FluidSource != null && fluidData.FluidSource.ShouldBeActive())
@@ -449,10 +450,13 @@ namespace Tuntenfisch.Fluids
                     {
                         m_parent.SetFluidSourceParameters(fluidData.FluidSource);
                         m_parent.BindTexturesForKernel(m_parent.m_addSourcesKernel,
-                            fluidData.FluidTextures, fluidData.SolidVoxelBuffer, false);
+                            fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
                         m_parent.m_fluidCompute.Dispatch(m_parent.m_addSourcesKernel, numberOfVoxels);
+                        fluidData.FluidTextures.SwapTextures(); // Swap after sources are added
                     }, cancellationToken);
                 }
+                
+                Debug.Log("AddedSources");
 
                 // 3. Advection step
                 await ExecuteComputeStepAsync("Advection", () =>
@@ -460,7 +464,10 @@ namespace Tuntenfisch.Fluids
                     m_parent.BindTexturesForKernel(m_parent.m_advectionKernel,
                         fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
                     m_parent.m_fluidCompute.Dispatch(m_parent.m_advectionKernel, numberOfVoxels);
+                    fluidData.FluidTextures.SwapTextures(); // Swap after advection
                 }, cancellationToken);
+                
+                Debug.Log("Advected");
 
                 // 4. Diffusion (viscosity) - optional
                 if (m_parent.m_viscosity > 0.001f)
@@ -473,6 +480,8 @@ namespace Tuntenfisch.Fluids
                         fluidData.FluidTextures.SwapTextures(); // Swap after diffusion
                     }, cancellationToken);
                 }
+                
+                Debug.Log("Diffused");
 
                 // 5. Pressure projection (incompressibility)
                 await ExecutePressureProjectionAsync(fluidData, numberOfVoxels, cancellationToken);
@@ -498,6 +507,8 @@ namespace Tuntenfisch.Fluids
                         textures, fluidData.SolidVoxelBuffer, false);
                     m_parent.m_fluidCompute.Dispatch(m_parent.m_computeDivergenceKernel, numberOfVoxels);
                 }, cancellationToken);
+                
+                Debug.Log("ComputedDivergence");
 
                 // Iterative pressure solve - spread across frames if needed
                 int iterationsPerFrame = math.max(1, m_parent.m_pressureIterations / m_parent.m_maxIterationsPerFrame);
@@ -517,6 +528,8 @@ namespace Tuntenfisch.Fluids
                         }
                     }, cancellationToken);
                 }
+                
+                Debug.Log("PressureSolved");
 
                 // Apply pressure gradient to velocity
                 await ExecuteComputeStepAsync("PressureProjection", () =>
@@ -524,7 +537,10 @@ namespace Tuntenfisch.Fluids
                     m_parent.BindTexturesForKernel(m_parent.m_pressureProjectionKernel,
                         textures, fluidData.SolidVoxelBuffer, true);
                     m_parent.m_fluidCompute.Dispatch(m_parent.m_pressureProjectionKernel, numberOfVoxels);
+                    textures.SwapVelocityTextures(); // Only swap velocity textures
                 }, cancellationToken);
+                
+                Debug.Log("PressureProjected");
             }
 
             private async UniTask ExecuteComputeStepAsync(string stepName, System.Action computeAction,
@@ -533,22 +549,23 @@ namespace Tuntenfisch.Fluids
                 float stepStartTime = Time.realtimeSinceStartup;
 
                 computeAction?.Invoke();
+                await UniTask.NextFrame(cancellationToken);
 
-                // Wait for GPU completion using async fence
-                var fence = Graphics.CreateGraphicsFence(GraphicsFenceType.AsyncQueueSynchronisation,
-                    SynchronisationStageFlags.ComputeProcessing);
-                float timeoutTime = Time.realtimeSinceStartup + m_parent.m_gpuTimeoutSeconds;
+                // Wait for GPU completion using async fence - Not supported on DX11
+                // var fence = Graphics.CreateGraphicsFence(GraphicsFenceType.AsyncQueueSynchronisation,
+                //     SynchronisationStageFlags.ComputeProcessing);
+                // float timeoutTime = Time.realtimeSinceStartup + m_parent.m_gpuTimeoutSeconds;
 
-                while (!fence.passed && Time.realtimeSinceStartup < timeoutTime &&
-                       !cancellationToken.IsCancellationRequested)
-                {
-                    await UniTask.NextFrame(cancellationToken);
-                }
-
-                if (!fence.passed && !cancellationToken.IsCancellationRequested)
-                {
-                    Debug.LogWarning($"GPU fence timeout for step: {stepName}");
-                }
+                // while (!fence.passed && Time.realtimeSinceStartup < timeoutTime &&
+                //        !cancellationToken.IsCancellationRequested)
+                // {
+                //     await UniTask.NextFrame(cancellationToken);
+                // }
+                //
+                // if (!fence.passed && !cancellationToken.IsCancellationRequested)
+                // {
+                //     Debug.LogWarning($"GPU fence timeout for step: {stepName}");
+                // }
 
                 // Record step performance
                 float stepDuration = Time.realtimeSinceStartup - stepStartTime;

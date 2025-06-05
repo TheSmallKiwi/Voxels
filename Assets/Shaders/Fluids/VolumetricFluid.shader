@@ -2,6 +2,7 @@ Shader "Fluids/VolumetricFluid"
 {
     Properties
     {
+        
         _DensityTexture ("Density Volume", 3D) = "" {}
         _VelocityTexture ("Velocity Volume", 3D) = "" {}
         _FluidColor ("Fluid Color", Color) = (0.2, 0.6, 1.0, 1.0)
@@ -61,12 +62,15 @@ Shader "Fluids/VolumetricFluid"
             float4x4 _CameraInvProjection;
             float3 _VolumePosition;
             float3 _VolumeSize;
+            
+            CBUFFER_START(UnityPerMaterial)
             float4 _FluidColor;
             float _AbsorptionStrength;
             float _ScatteringStrength;
             float _DensityThreshold;
             float _StepSize;
             int _MaxSteps;
+            CBUFFER_END
             
             // Ray-box intersection
             float2 RayBoxIntersection(float3 rayOrigin, float3 rayDirection, float3 boxMin, float3 boxMax)
@@ -119,7 +123,7 @@ Shader "Fluids/VolumetricFluid"
                 // Phase function for scattering (Henyey-Greenstein approximation)
                 float cosTheta = dot(-rayDirection, lightDir);
                 float g = 0.3; // Anisotropy factor
-                float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosTheta, 1.5);
+                float phase = (1.0 - g * g) / pow(abs(1.0 + g * g - 2.0 * g * cosTheta), 1.5);
                 
                 // Simplified light attenuation - just use a constant approximation
                 // to avoid the problematic shadow sampling loop
