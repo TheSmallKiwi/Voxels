@@ -172,13 +172,11 @@ namespace Tuntenfisch.World
 
         private void UpdateFluidBoundaries()
         {
-            m_flags &= ~ChunkFlags.FluidBoundaryUpdateRequired;
+            if (!WorldManager.FluidSimulation || !WorldManager.FluidSimulation.IsSimulationEnabled ||
+                m_request != null) return;
             m_lastBoundaryUpdateTime = Time.time;
-
-            if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
-            {
-                WorldManager.FluidSimulation.UpdateBoundariesFromSolids(m_fluidData);
-            }
+            m_flags &= ~ChunkFlags.FluidBoundaryUpdateRequired;
+            m_request = WorldManager.FluidSimulation.UpdateBoundariesAsync(m_fluidData);
         }
 
         private void RunFluidSimulationStep()
@@ -199,7 +197,14 @@ namespace Tuntenfisch.World
             }
 
             // Run complete simulation step
-            WorldManager.FluidSimulation.SimulateChunkFluidStep(m_fluidData);
+            m_request = WorldManager.FluidSimulation.RequestSimulationAsync(m_fluidData,
+                (success) =>
+                {
+                    if (success)
+                    {
+                        // Handle completion
+                    }
+                });
 
             // TODO: Count active fluid voxels and update ChunkFluidData
             // This would require an additional compute shader pass or readback
@@ -301,7 +306,10 @@ namespace Tuntenfisch.World
             // Initialize fluid textures through simulation system
             if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
             {
-                WorldManager.FluidSimulation.InitializeChunkFluidTextures(m_fluidData);
+                WorldManager.FluidSimulation.InitializeChunkAsync(m_fluidData, () =>
+                {
+                    // Initialization complete
+                });
             }
 
             // Debug.Log($"Initialized fluid data for chunk at {transform.position}");
@@ -332,10 +340,10 @@ namespace Tuntenfisch.World
             m_fluidData.FluidSource = sourceData;
 
             // Immediately add the source to simulation
-            if (WorldManager.FluidSimulation && WorldManager.FluidSimulation.IsSimulationEnabled)
-            {
-                WorldManager.FluidSimulation.AddFluidSource(m_fluidData);
-            }
+            // if (WorldManager.FluidSimulation && WorldManager.FluidSimulation.IsSimulationEnabled)
+            // {
+            //     WorldManager.FluidSimulation.AddFluidSource(m_fluidData);
+            // }
 
             Debug.Log($"Added fluid source to chunk at {transform.position}: {sourceData}");
         }

@@ -20,13 +20,13 @@ namespace Tuntenfisch.World
     /// Integrates texture-based fluid simulation with centralized FluidSimulation manager.
     /// </summary>
     [RequireComponent(typeof(VoxelConfig), typeof(VoxelVolume), typeof(DualContouring))]
-    [RequireComponent(typeof(CSGUtility), typeof(FluidSimulation))]
+    [RequireComponent(typeof(CSGUtility), typeof(AsyncFluidSimulation))]
     public class WorldManager : SingletonComponent<WorldManager>
     {
         public static VoxelConfig VoxelConfig => Instance.m_voxelConfig;
         public static VoxelVolume VoxelVolume => Instance.m_voxelVolume;
         public static DualContouring DualContouring => Instance.m_dualContouring;
-        public static FluidSimulation FluidSimulation => Instance.m_fluidSimulation;
+        public static AsyncFluidSimulation FluidSimulation => Instance.m_fluidSimulation;
 
         private float ViewDistanceSquared => m_lodDistancesSquared[m_lodDistancesSquared.Length - 1];
 
@@ -56,7 +56,7 @@ namespace Tuntenfisch.World
         private VoxelVolume m_voxelVolume;
         private DualContouring m_dualContouring;
         private CSGUtility m_csgUtility;
-        private FluidSimulation m_fluidSimulation;
+        private AsyncFluidSimulation m_fluidSimulation;
         private ObjectPool<Chunk> m_chunkPool;
         private Dictionary<int3, Chunk> m_chunks;
         private List<int3> m_chunksOutsideOfViewDistance;
@@ -144,7 +144,7 @@ namespace Tuntenfisch.World
 
         private void InitializeFluidSimulation()
         {
-            m_fluidSimulation = GetComponent<FluidSimulation>();
+            m_fluidSimulation = GetComponent<AsyncFluidSimulation>();
 
             if (m_fluidSimulation == null)
             {

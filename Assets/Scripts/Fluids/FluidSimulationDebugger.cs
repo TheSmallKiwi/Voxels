@@ -12,15 +12,17 @@ namespace Tuntenfisch.World
 {
     public class FluidSimulationDebugger : MonoBehaviour
     {
-        [Header("Debug Settings")]
-        [SerializeField] private bool m_enableDebugLogging = true;
+        [Header("Debug Settings")] [SerializeField]
+        private bool m_enableDebugLogging = true;
+
         [SerializeField] private bool m_visualizeFluidVolume = false;
         [SerializeField] private float m_debugSphereSize = 0.1f;
         [SerializeField] private Color m_fluidColor = Color.blue;
         [SerializeField] private Color m_solidColor = Color.gray;
 
-        [Header("Texture Visualization")]
-        [SerializeField] private bool m_showTextureDebugUI = true;
+        [Header("Texture Visualization")] [SerializeField]
+        private bool m_showTextureDebugUI = true;
+
         [SerializeField] private int m_textureSliceDepth = 32; // Which Z slice to display
         [SerializeField] private float m_densityMultiplier = 10f; // Multiply density for visibility
         [SerializeField] private float m_velocityScale = 5f; // Scale velocity vectors for visibility
@@ -28,12 +30,14 @@ namespace Tuntenfisch.World
         [SerializeField] private bool m_showVelocityTexture = true;
         [SerializeField] private bool m_showPressureTexture = false;
 
-        [Header("Texture Display Settings")]
-        [SerializeField] private Vector2 m_textureDisplaySize = new Vector2(256, 256);
+        [Header("Texture Display Settings")] [SerializeField]
+        private Vector2 m_textureDisplaySize = new Vector2(256, 256);
+
         [SerializeField] private Vector2 m_textureDisplayOffset = new Vector2(10, 10);
 
-        [Header("Test Settings")]
-        [SerializeField] private Vector3 m_testSourceOffset = Vector3.up * 5f;
+        [Header("Test Settings")] [SerializeField]
+        private Vector3 m_testSourceOffset = Vector3.up * 5f;
+
         [SerializeField] private float m_testSourceRadius = 2f;
         [SerializeField] private float m_testSourceAmount = 10f;
         [SerializeField] private Vector3 m_testSourceVelocity = Vector3.zero;
@@ -45,11 +49,13 @@ namespace Tuntenfisch.World
         private RenderTexture m_pressureSliceTexture;
         private ComputeShader m_textureSliceCompute;
         private int m_extractSliceKernel;
-        
+
         // Debug readback
         private ComputeBuffer m_debugReadbackBuffer;
         private FluidVoxelDebugData[] m_debugData;
-        private Dictionary<int3, ChunkTextureDebugInfo> m_chunkTextureInfo = new Dictionary<int3, ChunkTextureDebugInfo>();
+
+        private Dictionary<int3, ChunkTextureDebugInfo> m_chunkTextureInfo =
+            new Dictionary<int3, ChunkTextureDebugInfo>();
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
         private struct FluidVoxelDebugData
@@ -73,10 +79,10 @@ namespace Tuntenfisch.World
         private void Start()
         {
             InitializeTextureVisualization();
-            
+
             // Create debug readback buffer
             int voxelCount = GetComponent<VoxelConfig>().VoxelVolumeConfig.VoxelCount;
-            m_debugReadbackBuffer = new ComputeBuffer(voxelCount, 
+            m_debugReadbackBuffer = new ComputeBuffer(voxelCount,
                 System.Runtime.InteropServices.Marshal.SizeOf<FluidVoxelDebugData>());
             m_debugData = new FluidVoxelDebugData[voxelCount];
         }
@@ -87,7 +93,8 @@ namespace Tuntenfisch.World
             m_textureSliceCompute = Resources.Load<ComputeShader>("Compute/TextureSliceExtractor");
             if (m_textureSliceCompute == null)
             {
-                Debug.LogWarning("TextureSliceExtractor compute shader not found in Resources folder. Texture visualization disabled.");
+                Debug.LogWarning(
+                    "TextureSliceExtractor compute shader not found in Resources folder. Texture visualization disabled.");
                 return;
             }
 
@@ -128,21 +135,23 @@ namespace Tuntenfisch.World
         private void OnDestroy()
         {
             m_debugReadbackBuffer?.Release();
-            
+
             // Clean up texture visualization resources
             if (m_densitySliceTexture != null)
             {
                 m_densitySliceTexture.Release();
             }
+
             if (m_velocitySliceTexture != null)
             {
                 m_velocitySliceTexture.Release();
             }
+
             if (m_pressureSliceTexture != null)
             {
                 m_pressureSliceTexture.Release();
             }
-            
+
             if (m_textureDisplayMaterial != null)
             {
                 DestroyImmediate(m_textureDisplayMaterial);
@@ -187,13 +196,15 @@ namespace Tuntenfisch.World
         }
 
         // Inspector-displayable texture references
-        [Header("Current Texture Slices")]
-        [SerializeField] private RenderTexture m_currentDensitySlice;
+        [Header("Current Texture Slices")] [SerializeField]
+        private RenderTexture m_currentDensitySlice;
+
         [SerializeField] private RenderTexture m_currentVelocitySlice;
         [SerializeField] private RenderTexture m_currentPressureSlice;
-        
-        [Header("Texture Debug Info")]
-        [SerializeField] private string m_debugInfo = "No active chunks";
+
+        [Header("Texture Debug Info")] [SerializeField]
+        private string m_debugInfo = "No active chunks";
+
         [SerializeField] private float m_maxDensityValue = 0f;
         [SerializeField] private float m_maxVelocityMagnitude = 0f;
         [SerializeField] private float m_maxPressureValue = 0f;
@@ -209,11 +220,11 @@ namespace Tuntenfisch.World
 
             var fluidData = firstActiveChunk.FluidData;
             var textures = fluidData.FluidTextures;
-            
+
             m_debugInfo = $"Chunk: {fluidData.WorldPosition}\n" +
-                         $"Slice: {m_textureSliceDepth}/{textures.DensityRead.volumeDepth}\n" +
-                         $"Size: {textures.DensityRead.width}x{textures.DensityRead.height}x{textures.DensityRead.volumeDepth}\n" +
-                         $"Has Source: {fluidData.HasFluidSource}";
+                          $"Slice: {m_textureSliceDepth}/{textures.DensityRead.volumeDepth}\n" +
+                          $"Size: {textures.DensityRead.width}x{textures.DensityRead.height}x{textures.DensityRead.volumeDepth}\n" +
+                          $"Has Source: {fluidData.HasFluidSource}";
 
             // Extract texture slices for Inspector display
             ExtractTextureSlicesForInspector(textures);
@@ -235,11 +246,11 @@ namespace Tuntenfisch.World
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", m_densityMultiplier);
                 m_textureSliceCompute.SetInt("TextureDepth", textureDepth);
-                
+
                 int threadGroupsX = Mathf.CeilToInt(m_densitySliceTexture.width / 8.0f);
                 int threadGroupsY = Mathf.CeilToInt(m_densitySliceTexture.height / 8.0f);
                 m_textureSliceCompute.Dispatch(m_extractSliceKernel, threadGroupsX, threadGroupsY, 1);
-                
+
                 // Update Inspector reference
                 m_currentDensitySlice = m_densitySliceTexture;
             }
@@ -252,11 +263,11 @@ namespace Tuntenfisch.World
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", m_velocityScale);
                 m_textureSliceCompute.SetInt("TextureDepth", textureDepth);
-                
+
                 int threadGroupsX = Mathf.CeilToInt(m_velocitySliceTexture.width / 8.0f);
                 int threadGroupsY = Mathf.CeilToInt(m_velocitySliceTexture.height / 8.0f);
                 m_textureSliceCompute.Dispatch(m_extractSliceKernel, threadGroupsX, threadGroupsY, 1);
-                
+
                 // Update Inspector reference
                 m_currentVelocitySlice = m_velocitySliceTexture;
             }
@@ -269,11 +280,11 @@ namespace Tuntenfisch.World
                 m_textureSliceCompute.SetInt("SliceDepth", clampedSliceDepth);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", 1.0f);
                 m_textureSliceCompute.SetInt("TextureDepth", textureDepth);
-                
+
                 int threadGroupsX = Mathf.CeilToInt(m_pressureSliceTexture.width / 8.0f);
                 int threadGroupsY = Mathf.CeilToInt(m_pressureSliceTexture.height / 8.0f);
                 m_textureSliceCompute.Dispatch(m_extractSliceKernel, threadGroupsX, threadGroupsY, 1);
-                
+
                 // Update Inspector reference
                 m_currentPressureSlice = m_pressureSliceTexture;
             }
@@ -286,7 +297,7 @@ namespace Tuntenfisch.World
         {
             // Simple approach: just read a few sample values to estimate ranges
             // In a full implementation, you'd use a compute shader to calculate proper min/max
-            
+
             m_maxDensityValue = 1.0f; // Placeholder - would compute actual max
             m_maxVelocityMagnitude = 10.0f; // Placeholder - would compute actual max
             m_maxPressureValue = 5.0f; // Placeholder - would compute actual max
@@ -302,6 +313,7 @@ namespace Tuntenfisch.World
                     return chunk;
                 }
             }
+
             return null;
         }
 
@@ -309,10 +321,10 @@ namespace Tuntenfisch.World
         {
             var coordinate = chunk.transform.position; // Using position as key for simplicity
             int3 coord = new int3((int)coordinate.x, (int)coordinate.y, (int)coordinate.z);
-            
+
             if (m_chunkTextureInfo.TryGetValue(coord, out var info))
                 return info;
-                
+
             return new ChunkTextureDebugInfo();
         }
 
@@ -321,7 +333,7 @@ namespace Tuntenfisch.World
             // This method is now simplified since we're using Inspector display
             var chunks = WorldManager.Instance.GetActiveChunks();
             m_chunkTextureInfo.Clear();
-            
+
             foreach (var kvp in chunks)
             {
                 var chunk = kvp.Value;
@@ -337,7 +349,7 @@ namespace Tuntenfisch.World
                             chunk.FluidData.FluidTextures.DensityRead.volumeDepth
                         )
                     };
-                    
+
                     m_chunkTextureInfo[kvp.Key] = info;
                 }
             }
@@ -360,7 +372,7 @@ namespace Tuntenfisch.World
             Vector3 sourcePos = transform.position + m_testSourceOffset;
 
             Debug.Log($"[FluidDebug] Adding test fluid source at {sourcePos}");
-            
+
             WorldManager.Instance.AddFluidSource(
                 sourcePos,
                 m_testSourceVelocity,
@@ -383,16 +395,18 @@ namespace Tuntenfisch.World
                 if (chunk.HasActiveFluid())
                 {
                     fluidChunks++;
-                    
+
                     if (chunk.FluidData?.IsValid() == true)
                     {
                         validTextureChunks++;
-                        Debug.Log($"[FluidDebug] Chunk {kvp.Key} has valid fluid textures at {chunk.FluidData.WorldPosition}");
+                        Debug.Log(
+                            $"[FluidDebug] Chunk {kvp.Key} has valid fluid textures at {chunk.FluidData.WorldPosition}");
                     }
                 }
             }
 
-            Debug.Log($"[FluidDebug] Active chunks: {totalChunks}, With fluid: {fluidChunks}, With valid textures: {validTextureChunks}");
+            Debug.Log(
+                $"[FluidDebug] Active chunks: {totalChunks}, With fluid: {fluidChunks}, With valid textures: {validTextureChunks}");
         }
 
         private void ValidateFluidBuffers()
@@ -423,7 +437,7 @@ namespace Tuntenfisch.World
         private void DebugChunkTextures()
         {
             Debug.Log("=== Chunk Fluid Texture Debug ===");
-            
+
             var chunks = WorldManager.Instance.GetActiveChunks();
             foreach (var kvp in chunks)
             {
@@ -435,7 +449,7 @@ namespace Tuntenfisch.World
                     Debug.Log($"  World Position: {fluidData.WorldPosition}");
                     Debug.Log($"  Fluid Textures Valid: {fluidData.IsValid()}");
                     Debug.Log($"  Has Fluid Source: {fluidData.HasFluidSource}");
-                    
+
                     if (fluidData.FluidSource != null)
                     {
                         Debug.Log($"  Source Position: {fluidData.FluidSource.Position}");
@@ -444,12 +458,14 @@ namespace Tuntenfisch.World
                         Debug.Log($"  Source Active: {fluidData.FluidSource.IsActive}");
                         Debug.Log($"  Source Should Be Active: {fluidData.FluidSource.ShouldBeActive()}");
                     }
-                    
+
                     if (fluidData.FluidTextures != null)
                     {
                         var textures = fluidData.FluidTextures;
-                        Debug.Log($"  Velocity Texture: {textures.VelocityRead?.width}x{textures.VelocityRead?.height}x{textures.VelocityRead?.volumeDepth}");
-                        Debug.Log($"  Density Texture: {textures.DensityRead?.width}x{textures.DensityRead?.height}x{textures.DensityRead?.volumeDepth}");
+                        Debug.Log(
+                            $"  Velocity Texture: {textures.VelocityRead?.width}x{textures.VelocityRead?.height}x{textures.VelocityRead?.volumeDepth}");
+                        Debug.Log(
+                            $"  Density Texture: {textures.DensityRead?.width}x{textures.DensityRead?.height}x{textures.DensityRead?.volumeDepth}");
                         Debug.Log($"  Velocity Format: {textures.VelocityRead?.format}");
                         Debug.Log($"  Density Format: {textures.DensityRead?.format}");
                         Debug.Log($"  Velocity Created: {textures.VelocityRead?.IsCreated()}");
@@ -457,7 +473,7 @@ namespace Tuntenfisch.World
                     }
                 }
             }
-            
+
             Debug.Log("==============================");
         }
 
@@ -496,7 +512,7 @@ namespace Tuntenfisch.World
                 m_textureSliceCompute.SetInt("SliceDepth", middleSlice);
                 m_textureSliceCompute.SetFloat("ValueMultiplier", 1.0f);
                 m_textureSliceCompute.SetInt("TextureDepth", densityTexture.volumeDepth);
-                
+
                 int threadGroupsX = Mathf.CeilToInt(temp2D.width / 8.0f);
                 int threadGroupsY = Mathf.CeilToInt(temp2D.height / 8.0f);
                 m_textureSliceCompute.Dispatch(m_extractSliceKernel, threadGroupsX, threadGroupsY, 1);
@@ -516,7 +532,7 @@ namespace Tuntenfisch.World
             float minValue = float.MaxValue;
             float maxValue = float.MinValue;
             int nonZeroPixels = 0;
-            
+
             for (int i = 0; i < pixels.Length; i++)
             {
                 float value = pixels[i].r;
@@ -540,7 +556,8 @@ namespace Tuntenfisch.World
             int centerX = readbackTexture.width / 2;
             int centerY = readbackTexture.height / 2;
             Debug.Log($"Center pixel value: {readbackTexture.GetPixel(centerX, centerY).r}");
-            Debug.Log($"Corner pixel values: TL={readbackTexture.GetPixel(0, 0).r}, TR={readbackTexture.GetPixel(readbackTexture.width-1, 0).r}, BL={readbackTexture.GetPixel(0, readbackTexture.height-1).r}, BR={readbackTexture.GetPixel(readbackTexture.width-1, readbackTexture.height-1).r}");
+            Debug.Log(
+                $"Corner pixel values: TL={readbackTexture.GetPixel(0, 0).r}, TR={readbackTexture.GetPixel(readbackTexture.width - 1, 0).r}, BL={readbackTexture.GetPixel(0, readbackTexture.height - 1).r}, BR={readbackTexture.GetPixel(readbackTexture.width - 1, readbackTexture.height - 1).r}");
 
             // Cleanup
             DestroyImmediate(readbackTexture);
@@ -567,7 +584,7 @@ namespace Tuntenfisch.World
             Debug.Log("=== Simulation Step Debug ===");
             Debug.Log($"Chunk Position: {fluidData.WorldPosition}");
             Debug.Log($"Has Fluid Source: {fluidData.HasFluidSource}");
-            
+
             if (fluidData.FluidSource != null)
             {
                 var source = fluidData.FluidSource;
@@ -587,11 +604,11 @@ namespace Tuntenfisch.World
                 var chunkSize = WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions;
                 var chunkMin = chunkCenter - chunkSize * 0.5f;
                 var chunkMax = chunkCenter + chunkSize * 0.5f;
-                
+
                 bool sourceInChunk = source.Position.x >= chunkMin.x && source.Position.x <= chunkMax.x &&
-                                   source.Position.y >= chunkMin.y && source.Position.y <= chunkMax.y &&
-                                   source.Position.z >= chunkMin.z && source.Position.z <= chunkMax.z;
-                                   
+                                     source.Position.y >= chunkMin.y && source.Position.y <= chunkMax.y &&
+                                     source.Position.z >= chunkMin.z && source.Position.z <= chunkMax.z;
+
                 Debug.Log($"Source within chunk bounds: {sourceInChunk}");
                 Debug.Log($"Chunk bounds: Min={chunkMin}, Max={chunkMax}");
                 Debug.Log($"Distance from chunk center: {Vector3.Distance(source.Position, chunkCenter):F2}");
@@ -600,14 +617,15 @@ namespace Tuntenfisch.World
             // Check simulation state
             Debug.Log($"Simulation Active: {fluidData.IsSimulationActive()}");
             Debug.Log($"Needs Simulation Update: {fluidData.NeedsSimulationUpdate()}");
-            Debug.Log($"WorldManager.FluidSimulation.IsSimulationEnabled: {WorldManager.FluidSimulation?.IsSimulationEnabled}");
-            
+            Debug.Log(
+                $"WorldManager.FluidSimulation.IsSimulationEnabled: {WorldManager.FluidSimulation?.IsSimulationEnabled}");
+
             // Try to manually run one simulation step and log what happens
             if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
             {
                 Debug.Log("Manually running simulation step...");
-                WorldManager.FluidSimulation.SimulateChunkFluidStep(fluidData);
-                Debug.Log("Simulation step completed");
+                WorldManager.FluidSimulation.RequestSimulationAsync(fluidData,
+                    success => Debug.Log("Simulation step completed"));
             }
         }
 
@@ -624,7 +642,7 @@ namespace Tuntenfisch.World
                 {
                     // Draw chunk bounds
                     Gizmos.color = Color.cyan;
-                    Gizmos.DrawWireCube(chunk.transform.position, 
+                    Gizmos.DrawWireCube(chunk.transform.position,
                         WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions);
 
                     // Draw fluid source if present
