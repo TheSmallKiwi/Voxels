@@ -297,6 +297,13 @@ namespace Tuntenfisch.Fluids
                 m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidData.DensityWrite);
                 m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidData.PressureWrite);
             }
+            else
+            {
+                // Bind read textures (always writable)
+                m_fluidCompute.SetTexture(kernelId, "velocityWrite", fluidData.VelocityRead);
+                m_fluidCompute.SetTexture(kernelId, "densityWrite", fluidData.DensityRead);
+                m_fluidCompute.SetTexture(kernelId, "pressureWrite", fluidData.PressureRead);           
+            }
 
             // Bind divergence texture (always writable)
             m_fluidCompute.SetTexture(kernelId, "divergence", fluidData.Divergence);
@@ -442,7 +449,7 @@ namespace Tuntenfisch.Fluids
                     {
                         m_parent.SetFluidSourceParameters(fluidData.FluidSource);
                         m_parent.BindTexturesForKernel(m_parent.m_addSourcesKernel,
-                            fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
+                            fluidData.FluidTextures, fluidData.SolidVoxelBuffer, false);
                         m_parent.m_fluidCompute.Dispatch(m_parent.m_addSourcesKernel, numberOfVoxels);
                     }, cancellationToken);
                 }

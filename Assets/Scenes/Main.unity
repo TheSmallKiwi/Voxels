@@ -177,14 +177,6 @@ MonoBehaviour:
   - 200
   - 400
   - 600
-  m_enableFluidSimulation: 1
-  m_fluidUpdateInterval: 0.016
-  m_maxFluidChunksPerFrame: 5
-  m_fluidSourceDuration: 10
-  m_enableFluidDebugLogging: 0
-  m_enableFluidLOD: 1
-  m_fluidDisableDistance: 100
-  m_pauseDistantFluidSources: 1
 --- !u!114 &337836006
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -262,6 +254,12 @@ MonoBehaviour:
   m_gravity: {x: 0, y: -9.81, z: 0}
   m_densityDissipation: 0.999
   m_velocityDissipation: 0.995
+  m_numberOfWorkers: 4
+  m_initialTaskPoolPopulation: 500
+  m_maxIterationsPerFrame: 1
+  m_gpuTimeoutSeconds: 0.1
+  m_enablePerformanceLogging: 0
+  m_performanceLogInterval: 5
 --- !u!114 &337836011
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -276,13 +274,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_enableDebugLogging: 1
   m_visualizeFluidVolume: 1
-  m_debugSphereSize: 0.1
-  m_fluidColor: {r: 0, g: 0, b: 1, a: 1}
-  m_solidColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  m_textureSliceDepth: 32
+  m_densityMultiplier: 10
+  m_velocityScale: 5
+  m_showDensityTexture: 1
+  m_showVelocityTexture: 1
+  m_showPressureTexture: 1
+  m_textureDisplaySize: {x: 256, y: 256}
+  m_textureDisplayOffset: {x: 10, y: 10}
   m_testSourceOffset: {x: 0, y: 20, z: 20}
   m_testSourceRadius: 4
   m_testSourceAmount: 10
   m_testSourceVelocity: {x: 0, y: 2, z: 0}
+  m_testSourceDuration: 10
+  m_currentDensitySlice: {fileID: 0}
+  m_currentVelocitySlice: {fileID: 0}
+  m_currentPressureSlice: {fileID: 0}
+  m_debugInfo: No active chunks
+  m_maxDensityValue: 0
+  m_maxVelocityMagnitude: 0
+  m_maxPressureValue: 0
 --- !u!1 &430985030
 GameObject:
   m_ObjectHideFlags: 0

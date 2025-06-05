@@ -37,8 +37,8 @@ namespace Tuntenfisch.World
         private List<GPUVoxelVolumeCSGOperation> m_voxelVolumeCSGOperations;
         private ChunkFlags m_flags;
 
-        [Header("Fluid Simulation")] [SerializeField]
-        private bool m_enableFluidSimulation = true;
+        [Header("Fluid Simulation")]
+        private bool FluidSimulationEnabled => WorldManager.FluidSimulation && WorldManager.FluidSimulation.IsSimulationEnabled;
 
         [SerializeField] private float m_fluidTimeStep = 0.016f; // 60 FPS target
         [SerializeField] private bool m_enableVolumetricRendering = true;
@@ -48,11 +48,12 @@ namespace Tuntenfisch.World
         private ChunkFluidData m_fluidData;
         private bool m_registeredForVolumetricRendering = false;
         private float m_lastBoundaryUpdateTime = 0f;
-        private const float BOUNDARY_UPDATE_INTERVAL = 0.1f; // Update boundaries every 100ms
+        private const float BOUNDARY_UPDATE_INTERVAL = 1f; // Update boundaries every 100ms
 
         // Performance monitoring
         private float m_lastFluidUpdateTime = 0f;
         private int m_simulationStepsThisFrame = 0;
+        private IRequest m_fluidRequest;
 
         public ComputeBuffer VoxelVolumeBuffer => m_voxelVolumeBuffer;
         public ChunkFluidData FluidData => m_fluidData;
@@ -81,7 +82,7 @@ namespace Tuntenfisch.World
                 WorldManager.VoxelVolume.GenerateVoxelVolume(m_voxelVolumeBuffer, transform.position);
 
                 // Mark fluid boundaries for update when voxel volume changes
-                if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
+                if (FluidSimulationEnabled && m_fluidData != null && m_fluidData.IsValid())
                 {
                     m_flags |= ChunkFlags.FluidBoundaryUpdateRequired;
                 }
@@ -96,7 +97,7 @@ namespace Tuntenfisch.World
                 m_voxelVolumeCSGOperations.Clear();
 
                 // Mark fluid boundaries for update after CSG operations
-                if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
+                if (FluidSimulationEnabled && m_fluidData != null && m_fluidData.IsValid())
                 {
                     m_flags |= ChunkFlags.FluidBoundaryUpdateRequired;
                 }
@@ -128,7 +129,7 @@ namespace Tuntenfisch.World
             }
 
             // Handle fluid simulation updates
-            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
+            if (FluidSimulationEnabled && m_fluidData != null && m_fluidData.IsValid())
             {
                 UpdateFluidSimulation();
             }
@@ -136,7 +137,7 @@ namespace Tuntenfisch.World
 
         private bool ShouldUpdateFluid()
         {
-            return m_enableFluidSimulation &&
+            return FluidSimulationEnabled &&
                    m_fluidData != null &&
                    m_fluidData.IsValid() &&
                    m_fluidData.NeedsSimulationUpdate();
@@ -173,15 +174,17 @@ namespace Tuntenfisch.World
         private void UpdateFluidBoundaries()
         {
             if (!WorldManager.FluidSimulation || !WorldManager.FluidSimulation.IsSimulationEnabled ||
-                m_request != null) return;
+                m_fluidRequest != null) return;
             m_lastBoundaryUpdateTime = Time.time;
             m_flags &= ~ChunkFlags.FluidBoundaryUpdateRequired;
-            m_request = WorldManager.FluidSimulation.UpdateBoundariesAsync(m_fluidData);
+            m_fluidRequest =
+                WorldManager.FluidSimulation.UpdateBoundariesAsync(m_fluidData, () => m_fluidRequest = null);
         }
 
         private void RunFluidSimulationStep()
         {
-            if (WorldManager.FluidSimulation == null || !WorldManager.FluidSimulation.IsSimulationEnabled)
+            if (!WorldManager.FluidSimulation || !WorldManager.FluidSimulation.IsSimulationEnabled ||
+                m_fluidRequest != null)
                 return;
 
             // Get current fluid source (if any)
@@ -197,12 +200,12 @@ namespace Tuntenfisch.World
             }
 
             // Run complete simulation step
-            m_request = WorldManager.FluidSimulation.RequestSimulationAsync(m_fluidData,
+            m_fluidRequest = WorldManager.FluidSimulation.RequestSimulationAsync(m_fluidData,
                 (success) =>
                 {
                     if (success)
                     {
-                        // Handle completion
+                        m_fluidRequest = null;
                     }
                 });
 
@@ -242,7 +245,7 @@ namespace Tuntenfisch.World
             Gizmos.DrawWireCube(transform.position, WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions);
 
             // Draw fluid debug info
-            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.HasFluidSource)
+            if (FluidSimulationEnabled && m_fluidData != null && m_fluidData.HasFluidSource)
             {
                 var source = m_fluidData.FluidSource;
 
@@ -293,7 +296,7 @@ namespace Tuntenfisch.World
 
         private void InitializeFluidData()
         {
-            if (!m_enableFluidSimulation)
+            if (!FluidSimulationEnabled)
                 return;
 
             CleanupFluidData(); // Ensure clean state
@@ -329,7 +332,7 @@ namespace Tuntenfisch.World
         public void AddFluidSource(Vector3 worldPosition, Vector3 velocity, float radius, float amount,
             MaterialIndex material = MaterialIndex.Water, float duration = -1f)
         {
-            if (!m_enableFluidSimulation || m_fluidData == null || !m_fluidData.IsValid())
+            if (!FluidSimulationEnabled || m_fluidData == null || !m_fluidData.IsValid())
             {
                 Debug.LogWarning(
                     $"Cannot add fluid source to chunk at {transform.position}: fluid simulation not available");
@@ -350,7 +353,7 @@ namespace Tuntenfisch.World
 
         public void RemoveFluidSource()
         {
-            if (!m_enableFluidSimulation || m_fluidData == null)
+            if (!FluidSimulationEnabled || m_fluidData == null)
                 return;
 
             m_fluidData.RemoveFluidSource();
@@ -359,7 +362,7 @@ namespace Tuntenfisch.World
 
         public bool HasActiveFluid()
         {
-            return m_enableFluidSimulation &&
+            return FluidSimulationEnabled &&
                    m_fluidData != null &&
                    m_fluidData.IsValid() &&
                    m_fluidData.HasVisibleFluid();
@@ -367,7 +370,7 @@ namespace Tuntenfisch.World
 
         public float GetFluidDensityAtPosition(Vector3 worldPosition)
         {
-            if (!m_enableFluidSimulation || m_fluidData == null || !m_fluidData.IsValid())
+            if (!FluidSimulationEnabled || m_fluidData == null || !m_fluidData.IsValid())
                 return 0f;
 
             return m_fluidData.GetFluidDensityAtPosition(worldPosition);
@@ -576,7 +579,7 @@ namespace Tuntenfisch.World
 
         public void RunStep()
         {
-            if (m_enableFluidSimulation && m_fluidData != null && m_fluidData.IsValid())
+            if (FluidSimulationEnabled && m_fluidData != null && m_fluidData.IsValid())
             {
                 RunFluidSimulationStep();
                 Debug.Log($"Manual fluid simulation step completed for chunk at {transform.position}");

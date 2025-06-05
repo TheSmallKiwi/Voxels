@@ -16,31 +16,31 @@ namespace Tuntenfisch.World
         private bool m_enableDebugLogging = true;
 
         [SerializeField] private bool m_visualizeFluidVolume = false;
-        [SerializeField] private float m_debugSphereSize = 0.1f;
-        [SerializeField] private Color m_fluidColor = Color.blue;
-        [SerializeField] private Color m_solidColor = Color.gray;
+        private float m_debugSphereSize = 0.1f;
+        private Color m_fluidColor = Color.blue;
+        private Color m_solidColor = Color.gray;
 
-        [Header("Texture Visualization")] [SerializeField]
-        private bool m_showTextureDebugUI = true;
+        [Header("Texture Visualization")]
 
-        [SerializeField] private int m_textureSliceDepth = 32; // Which Z slice to display
-        [SerializeField] private float m_densityMultiplier = 10f; // Multiply density for visibility
-        [SerializeField] private float m_velocityScale = 5f; // Scale velocity vectors for visibility
-        [SerializeField] private bool m_showDensityTexture = true;
-        [SerializeField] private bool m_showVelocityTexture = true;
-        [SerializeField] private bool m_showPressureTexture = false;
+        [SerializeField][HideInInspector] private int m_textureSliceDepth = 32; // Which Z slice to display
+        [SerializeField][HideInInspector] private float m_densityMultiplier = 10f; // Multiply density for visibility
+        [SerializeField][HideInInspector] private float m_velocityScale = 5f; // Scale velocity vectors for visibility
+        [SerializeField][HideInInspector] private bool m_showDensityTexture = true;
+        [SerializeField][HideInInspector] private bool m_showVelocityTexture = true;
+        [SerializeField][HideInInspector] private bool m_showPressureTexture = false;
 
-        [Header("Texture Display Settings")] [SerializeField]
+        [Header("Texture Display Settings")] [SerializeField][HideInInspector]
         private Vector2 m_textureDisplaySize = new Vector2(256, 256);
 
-        [SerializeField] private Vector2 m_textureDisplayOffset = new Vector2(10, 10);
+        [SerializeField][HideInInspector] private Vector2 m_textureDisplayOffset = new Vector2(10, 10);
 
         [Header("Test Settings")] [SerializeField]
         private Vector3 m_testSourceOffset = Vector3.up * 5f;
 
-        [SerializeField] private float m_testSourceRadius = 2f;
+        [SerializeField] private float m_testSourceRadius = 10f;
         [SerializeField] private float m_testSourceAmount = 10f;
-        [SerializeField] private Vector3 m_testSourceVelocity = Vector3.zero;
+        [SerializeField] private Vector3 m_testSourceVelocity = Vector3.up;
+        [SerializeField] private float m_testSourceDuration = 10f;
 
         // Texture visualization resources
         private Material m_textureDisplayMaterial;
@@ -49,6 +49,20 @@ namespace Tuntenfisch.World
         private RenderTexture m_pressureSliceTexture;
         private ComputeShader m_textureSliceCompute;
         private int m_extractSliceKernel;
+        
+        // Inspector-displayable texture references
+        [Header("Current Texture Slices")] [SerializeField][HideInInspector]
+        private RenderTexture m_currentDensitySlice;
+
+        [SerializeField][HideInInspector] private RenderTexture m_currentVelocitySlice;
+        [SerializeField][HideInInspector] private RenderTexture m_currentPressureSlice;
+
+        [Header("Texture Debug Info")] [SerializeField][HideInInspector]
+        private string m_debugInfo = "No active chunks";
+
+        [SerializeField][HideInInspector] private float m_maxDensityValue = 0f;
+        [SerializeField][HideInInspector] private float m_maxVelocityMagnitude = 0f;
+        [SerializeField][HideInInspector] private float m_maxPressureValue = 0f;
 
         // Debug readback
         private ComputeBuffer m_debugReadbackBuffer;
@@ -194,20 +208,6 @@ namespace Tuntenfisch.World
             // Update Inspector textures and info
             UpdateInspectorDisplay();
         }
-
-        // Inspector-displayable texture references
-        [Header("Current Texture Slices")] [SerializeField]
-        private RenderTexture m_currentDensitySlice;
-
-        [SerializeField] private RenderTexture m_currentVelocitySlice;
-        [SerializeField] private RenderTexture m_currentPressureSlice;
-
-        [Header("Texture Debug Info")] [SerializeField]
-        private string m_debugInfo = "No active chunks";
-
-        [SerializeField] private float m_maxDensityValue = 0f;
-        [SerializeField] private float m_maxVelocityMagnitude = 0f;
-        [SerializeField] private float m_maxPressureValue = 0f;
 
         private void UpdateInspectorDisplay()
         {
@@ -358,12 +358,10 @@ namespace Tuntenfisch.World
         private void CycleThroughTextureSlices()
         {
             var firstChunk = GetFirstActiveChunk();
-            if (firstChunk?.FluidData?.FluidTextures?.DensityRead != null)
-            {
-                int maxDepth = firstChunk.FluidData.FluidTextures.DensityRead.volumeDepth;
-                m_textureSliceDepth = (m_textureSliceDepth + 1) % maxDepth;
-                Debug.Log($"Switched to texture slice depth: {m_textureSliceDepth}/{maxDepth}");
-            }
+            if (firstChunk?.FluidData?.FluidTextures?.DensityRead == null) return;
+            int maxDepth = firstChunk.FluidData.FluidTextures.DensityRead.volumeDepth;
+            m_textureSliceDepth = (m_textureSliceDepth + 1) % maxDepth;
+            Debug.Log($"Switched to texture slice depth: {m_textureSliceDepth}/{maxDepth}");
         }
 
         // Enhanced debug methods
@@ -378,8 +376,8 @@ namespace Tuntenfisch.World
                 m_testSourceVelocity,
                 m_testSourceRadius,
                 m_testSourceAmount,
-                MaterialIndex.Water
-            );
+                MaterialIndex.Water,
+                m_testSourceDuration            );
         }
 
         private void DebugActiveChunks()
@@ -414,7 +412,7 @@ namespace Tuntenfisch.World
             Debug.Log("[FluidDebug] Validating fluid system configuration...");
 
             // Check FluidSimulation component
-            if (WorldManager.FluidSimulation == null)
+            if (!WorldManager.FluidSimulation)
             {
                 Debug.LogError("[FluidDebug] FluidSimulation component is null!");
                 return;
@@ -621,7 +619,7 @@ namespace Tuntenfisch.World
                 $"WorldManager.FluidSimulation.IsSimulationEnabled: {WorldManager.FluidSimulation?.IsSimulationEnabled}");
 
             // Try to manually run one simulation step and log what happens
-            if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
+            if (WorldManager.FluidSimulation && WorldManager.FluidSimulation.IsSimulationEnabled)
             {
                 Debug.Log("Manually running simulation step...");
                 WorldManager.FluidSimulation.RequestSimulationAsync(fluidData,
@@ -643,7 +641,7 @@ namespace Tuntenfisch.World
                     // Draw chunk bounds
                     Gizmos.color = Color.cyan;
                     Gizmos.DrawWireCube(chunk.transform.position,
-                        WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions);
+                        WorldManager.VoxelConfig.VoxelVolumeConfig.VoxelVolumeDimensions + 1f);
 
                     // Draw fluid source if present
                     var fluidData = chunk.FluidData;

@@ -28,7 +28,7 @@ namespace Tuntenfisch.World
         public static DualContouring DualContouring => Instance.m_dualContouring;
         public static AsyncFluidSimulation FluidSimulation => Instance.m_fluidSimulation;
 
-        private float ViewDistanceSquared => m_lodDistancesSquared[m_lodDistancesSquared.Length - 1];
+        private float ViewDistanceSquared => m_lodDistancesSquared[^1];
 
         [Header("World Settings")] [SerializeField]
         private Transform m_viewer;
@@ -37,20 +37,7 @@ namespace Tuntenfisch.World
         [SerializeField] private GameObject m_chunkPrefab;
         [SerializeField] private int m_initialChunkPoolPopulation = 0;
         [SerializeField] private float[] m_lodDistances;
-
-        [Header("Fluid Settings")] [SerializeField]
-        private bool m_enableFluidSimulation = true;
-
-        [SerializeField] private float m_fluidUpdateInterval = 0.016f; // 60 FPS for fluid updates
-        [SerializeField] private int m_maxFluidChunksPerFrame = 5;
-        [SerializeField] private float m_fluidSourceDuration = 10f; // Default duration for test sources
-        [SerializeField] private bool m_enableFluidDebugLogging = false;
-
-        [Header("Performance")] [SerializeField]
-        private bool m_enableFluidLOD = true;
-
-        [SerializeField] private float m_fluidDisableDistance = 100f;
-        [SerializeField] private bool m_pauseDistantFluidSources = true;
+        private bool FluidSimulationEnabled => m_fluidSimulation && m_fluidSimulation.IsSimulationEnabled;
 
         private VoxelConfig m_voxelConfig;
         private VoxelVolume m_voxelVolume;
@@ -66,15 +53,11 @@ namespace Tuntenfisch.World
         private Dictionary<int3, List<GPUVoxelVolumeCSGOperation>> m_chunkModifications;
 
         // Fluid management
-        private List<int3> m_activeFluidChunks = new List<int3>();
-        private Queue<int3> m_fluidUpdateQueue = new Queue<int3>();
+        private List<int3> m_activeFluidChunks;
         private float m_lastFluidUpdate = 0f;
         private int m_fluidChunksUpdatedThisFrame = 0;
+        private float m_testFluidSourceDuration = 20f;
 
-        // Performance tracking
-        private float m_lastPerformanceLog = 0f;
-        private const float PERFORMANCE_LOG_INTERVAL = 5f;
-        private FluidPerformanceStats m_performanceStats = new FluidPerformanceStats();
 
         // World update timing
         private float3 m_lastViewerPosition;
@@ -105,17 +88,10 @@ namespace Tuntenfisch.World
             }
 
             // Update fluid simulation
-            if (m_enableFluidSimulation && Time.time - m_lastFluidUpdate >= m_fluidUpdateInterval)
+            if (FluidSimulationEnabled && Time.time - m_lastFluidUpdate >= 1.0f)
             {
                 UpdateFluidSystem(currentViewerPosition);
                 m_lastFluidUpdate = Time.time;
-            }
-
-            // Performance logging
-            if (m_enableFluidDebugLogging && Time.time - m_lastPerformanceLog >= PERFORMANCE_LOG_INTERVAL)
-            {
-                LogPerformanceStats();
-                m_lastPerformanceLog = Time.time;
             }
         }
 
@@ -146,23 +122,18 @@ namespace Tuntenfisch.World
         {
             m_fluidSimulation = GetComponent<AsyncFluidSimulation>();
 
-            if (m_fluidSimulation == null)
+            if (!m_fluidSimulation)
             {
                 Debug.LogError("FluidSimulation component is required but not found!");
-                m_enableFluidSimulation = false;
                 return;
             }
 
             if (!m_fluidSimulation.IsSimulationEnabled)
             {
                 Debug.LogWarning("FluidSimulation is disabled. Fluid features will not be available.");
-                m_enableFluidSimulation = false;
             }
 
-            if (m_enableFluidDebugLogging)
-            {
-                Debug.Log($"FluidSimulation initialized. Enabled: {m_enableFluidSimulation}");
-            }
+            m_activeFluidChunks = new List<int3>();
         }
 
         private void InitializeChunkManagement()
@@ -192,22 +163,10 @@ namespace Tuntenfisch.World
 
         private void UpdateFluidSystem(float3 viewerPosition)
         {
-            m_fluidChunksUpdatedThisFrame = 0;
-
             // Update active fluid chunks list
             UpdateActiveFluidChunksList();
 
-            // Apply LOD and distance culling to fluid simulation
-            if (m_enableFluidLOD)
-            {
-                ApplyFluidLOD(viewerPosition);
-            }
-
-            // Process fluid update queue
-            ProcessFluidUpdateQueue();
-
-            // Update performance stats
-            UpdatePerformanceStats();
+            // TODO: Proper Fluid LOD management
         }
 
         private void UpdateActiveFluidChunksList()
@@ -222,81 +181,6 @@ namespace Tuntenfisch.World
                     m_activeFluidChunks.Add(kvp.Key);
                 }
             }
-        }
-
-        private void ApplyFluidLOD(float3 viewerPosition)
-        {
-            foreach (var chunkCoord in m_activeFluidChunks)
-            {
-                if (m_chunks.TryGetValue(chunkCoord, out Chunk chunk))
-                {
-                    float3 chunkPosition = chunk.transform.position;
-                    float distanceSquared = math.lengthsq(chunkPosition - viewerPosition);
-
-                    // Disable fluid simulation for very distant chunks
-                    if (distanceSquared > m_fluidDisableDistance * m_fluidDisableDistance)
-                    {
-                        if (m_pauseDistantFluidSources && chunk.FluidData?.HasFluidSource == true)
-                        {
-                            // Temporarily pause distant sources instead of removing them
-                            continue;
-                        }
-                    }
-
-                    // Add to update queue if not already processed this frame
-                    if (m_fluidChunksUpdatedThisFrame < m_maxFluidChunksPerFrame)
-                    {
-                        if (!m_fluidUpdateQueue.Contains(chunkCoord))
-                        {
-                            m_fluidUpdateQueue.Enqueue(chunkCoord);
-                        }
-                    }
-                }
-            }
-        }
-
-        private void ProcessFluidUpdateQueue()
-        {
-            while (m_fluidUpdateQueue.Count > 0 && m_fluidChunksUpdatedThisFrame < m_maxFluidChunksPerFrame)
-            {
-                var chunkCoord = m_fluidUpdateQueue.Dequeue();
-
-                if (m_chunks.TryGetValue(chunkCoord, out Chunk chunk))
-                {
-                    if (chunk.FluidData?.NeedsSimulationUpdate() == true)
-                    {
-                        // Chunk will handle its own fluid update in its Update() method
-                        m_fluidChunksUpdatedThisFrame++;
-                    }
-                }
-            }
-        }
-
-        private void UpdatePerformanceStats()
-        {
-            m_performanceStats.TotalChunks = m_chunks.Count;
-            m_performanceStats.ActiveFluidChunks = m_activeFluidChunks.Count;
-            m_performanceStats.FluidChunksUpdatedThisFrame = m_fluidChunksUpdatedThisFrame;
-
-            // Calculate memory usage
-            long totalFluidMemory = 0;
-            foreach (var chunk in m_chunks.Values)
-            {
-                if (chunk.FluidData != null)
-                {
-                    totalFluidMemory += chunk.FluidData.GetEstimatedMemoryUsage();
-                }
-            }
-
-            m_performanceStats.EstimatedFluidMemoryUsage = totalFluidMemory;
-        }
-
-        private void LogPerformanceStats()
-        {
-            Debug.Log($"[FluidPerformance] Chunks: {m_performanceStats.TotalChunks}, " +
-                      $"Active Fluid: {m_performanceStats.ActiveFluidChunks}, " +
-                      $"Updated This Frame: {m_performanceStats.FluidChunksUpdatedThisFrame}, " +
-                      $"Memory: {m_performanceStats.EstimatedFluidMemoryUsage / (1024 * 1024)}MB");
         }
 
         #endregion
@@ -346,7 +230,7 @@ namespace Tuntenfisch.World
         public void AddFluidSource(float3 worldPosition, float3 velocity, float radius, float amount,
             MaterialIndex fluidMaterial = MaterialIndex.Water, float duration = -1f)
         {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null || !m_fluidSimulation.IsSimulationEnabled)
+            if (!FluidSimulationEnabled)
             {
                 Debug.LogWarning("Fluid simulation is not available. Cannot add fluid source.");
                 return;
@@ -356,14 +240,8 @@ namespace Tuntenfisch.World
 
             if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
             {
-                float actualDuration = duration > 0 ? duration : m_fluidSourceDuration;
+                float actualDuration = duration > 0 ? duration : m_testFluidSourceDuration;
                 chunk.AddFluidSource(worldPosition, velocity, radius, amount, fluidMaterial, actualDuration);
-
-                if (m_enableFluidDebugLogging)
-                {
-                    Debug.Log($"Added fluid source to chunk {chunkCoordinate} at {worldPosition} " +
-                              $"(duration: {actualDuration}s)");
-                }
             }
             else
             {
@@ -377,7 +255,7 @@ namespace Tuntenfisch.World
         /// </summary>
         public void RemoveFluidSource(float3 worldPosition)
         {
-            if (!m_enableFluidSimulation || m_fluidSimulation == null)
+            if (!FluidSimulationEnabled || m_fluidSimulation == null)
                 return;
 
             int3 chunkCoordinate = CalculateChunkCoordinate(worldPosition);
@@ -385,11 +263,6 @@ namespace Tuntenfisch.World
             if (m_chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
             {
                 chunk.RemoveFluidSource();
-
-                if (m_enableFluidDebugLogging)
-                {
-                    Debug.Log($"Removed fluid source from chunk {chunkCoordinate}");
-                }
             }
         }
 
@@ -398,7 +271,7 @@ namespace Tuntenfisch.World
         /// </summary>
         public void RemoveAllFluidSources()
         {
-            if (!m_enableFluidSimulation)
+            if (!FluidSimulationEnabled)
                 return;
 
             int removedCount = 0;
@@ -409,11 +282,6 @@ namespace Tuntenfisch.World
                     chunk.RemoveFluidSource();
                     removedCount++;
                 }
-            }
-
-            if (m_enableFluidDebugLogging)
-            {
-                Debug.Log($"Removed {removedCount} fluid sources from {m_chunks.Count} chunks");
             }
         }
 
@@ -431,13 +299,9 @@ namespace Tuntenfisch.World
                 3f, // radius
                 50f, // amount
                 MaterialIndex.Water,
-                m_fluidSourceDuration
+                m_testFluidSourceDuration
             );
-
-            if (m_enableFluidDebugLogging)
-            {
-                Debug.Log($"Added test fluid source at {sourcePos} with duration {m_fluidSourceDuration}s");
-            }
+            Debug.Log($"Added test fluid source at {sourcePos} with duration {m_testFluidSourceDuration}s");
         }
 
         /// <summary>
@@ -445,7 +309,7 @@ namespace Tuntenfisch.World
         /// </summary>
         public void ForceRegenerateAllFluidMeshes()
         {
-            if (!m_enableFluidSimulation)
+            if (!FluidSimulationEnabled)
             {
                 Debug.LogWarning("Fluid simulation is disabled");
                 return;
@@ -483,7 +347,7 @@ namespace Tuntenfisch.World
         /// </summary>
         public void DebugChunkFluidStates()
         {
-            if (!m_enableFluidSimulation)
+            if (!FluidSimulationEnabled)
             {
                 Debug.Log("Fluid simulation is disabled");
                 return;
@@ -522,7 +386,6 @@ namespace Tuntenfisch.World
             Debug.Log($"Chunks with fluid data: {chunksWithFluidData}");
             Debug.Log($"Chunks with active sources: {chunksWithActiveSources}");
             Debug.Log($"Chunks with active fluid: {chunksWithActiveFluid}");
-            Debug.Log($"Performance stats: {m_performanceStats}");
             Debug.Log("================================");
         }
 
@@ -531,7 +394,7 @@ namespace Tuntenfisch.World
         /// </summary>
         public float GetFluidDensityAtPosition(float3 worldPosition)
         {
-            if (!m_enableFluidSimulation)
+            if (!FluidSimulationEnabled)
                 return 0f;
 
             int3 chunkCoordinate = CalculateChunkCoordinate(worldPosition);
@@ -558,14 +421,6 @@ namespace Tuntenfisch.World
         public List<Chunk> GetActiveFluidChunks()
         {
             return m_chunks.Values.Where(chunk => chunk.HasActiveFluid()).ToList();
-        }
-
-        /// <summary>
-        /// Get fluid performance statistics
-        /// </summary>
-        public FluidPerformanceStats GetFluidPerformanceStats()
-        {
-            return m_performanceStats;
         }
 
         #endregion
@@ -617,11 +472,6 @@ namespace Tuntenfisch.World
 
             foreach (int3 chunkCoordinate in m_chunksOutsideOfViewDistance)
             {
-                if (m_enableFluidDebugLogging && m_chunks[chunkCoordinate].HasActiveFluid())
-                {
-                    Debug.Log($"Destroying chunk {chunkCoordinate} with active fluid");
-                }
-
                 m_chunkPool.Release(m_chunks[chunkCoordinate]);
                 m_chunks.Remove(chunkCoordinate);
             }
@@ -659,12 +509,6 @@ namespace Tuntenfisch.World
                     chunk.SetCoordinate(chunkCoordinate);
                     chunk.ApplyStoredModifications(chunkCoordinate);
                     m_chunks[chunkCoordinate] = chunk;
-
-                    if (m_enableFluidDebugLogging)
-                    {
-                        Debug.Log(
-                            $"Created new chunk at {chunkCoordinate} with fluid simulation enabled: {m_enableFluidSimulation}");
-                    }
                 }
 
                 EnqueueChunk(chunkCoordinate + new int3(1, 0, 0), viewerPosition);
@@ -759,7 +603,6 @@ namespace Tuntenfisch.World
 
             m_chunks.Clear();
             m_activeFluidChunks.Clear();
-            m_fluidUpdateQueue.Clear();
 
             UpdateWorld(m_viewer.position);
         }

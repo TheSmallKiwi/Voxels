@@ -30,6 +30,8 @@ namespace Tuntenfisch.Editor.World
             EditorGUILayout.LabelField("Fluid Simulation Debugger", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
+            DrawDefaultInspector();
+
             // Debug Controls Section
             DrawDebugControls();
             EditorGUILayout.Space();
