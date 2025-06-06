@@ -7,6 +7,7 @@ using Tuntenfisch.Voxels.Materials;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using System.Collections.Generic;
+using Tuntenfisch.Rendering;
 
 namespace Tuntenfisch.World
 {
@@ -351,6 +352,32 @@ namespace Tuntenfisch.World
                     };
 
                     m_chunkTextureInfo[kvp.Key] = info;
+                }
+            }
+        }
+        
+        [ContextMenu("Debug Volumetric Renderer")]
+        private void DebugVolumetricRenderer()
+        {
+            var fRenderer = FindFirstObjectByType<VolumetricFluidRenderer>();
+            if (fRenderer == null)
+            {
+                Debug.LogError("VolumetricFluidRenderer not found!");
+                return;
+            }
+    
+            Debug.Log($"Active chunks in renderer: {fRenderer.GetActiveChunkCount()}");
+    
+            // Check if any chunks have valid fluid data
+            var chunks = WorldManager.Instance.GetActiveChunks();
+            foreach (var chunk in chunks.Values)
+            {
+                if (chunk.HasActiveFluid() && chunk.FluidData?.IsValid() == true)
+                {
+                    var textures = chunk.FluidData.FluidTextures;
+                    Debug.Log($"Chunk textures - Density: {textures.DensityRead?.IsCreated()}, " +
+                              $"Velocity: {textures.VelocityRead?.IsCreated()}, " +
+                              $"Size: {textures.DensityRead?.width}x{textures.DensityRead?.height}x{textures.DensityRead?.volumeDepth}");
                 }
             }
         }

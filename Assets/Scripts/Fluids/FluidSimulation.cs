@@ -8,7 +8,6 @@ using Tuntenfisch.Generics.Pool;
 using Tuntenfisch.Voxels;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace Tuntenfisch.Fluids
 {
@@ -25,10 +24,10 @@ namespace Tuntenfisch.Fluids
         private bool m_enableSimulation = true;
 
         [SerializeField] private float m_timeStep = 0.016f;
-        [SerializeField] private int m_pressureIterations = 15;
+        [SerializeField] private int m_pressureIterations = 20;
         [SerializeField] private float m_viscosity = 0.01f;
         [SerializeField] private Vector3 m_gravity = new Vector3(0, -9.81f, 0);
-        [SerializeField] private float m_densityDissipation = 2f;
+        [SerializeField] private float m_densityDissipation = 0.99f;
         [SerializeField] private float m_velocityDissipation = 0.995f;
 
         [Header("Async Performance")] [Range(1, 8)] [SerializeField]
@@ -400,9 +399,6 @@ namespace Tuntenfisch.Fluids
 
                     // Execute simulation pipeline
                     await ExecuteSimulationPipeline(fluidData, cancellationToken);
-
-                    // Swap textures to finalize the step
-                    // fluidData.FluidTextures.SwapTextures();
                     
                     // Debug.Log("Swapped Textures");
 
@@ -433,14 +429,15 @@ namespace Tuntenfisch.Fluids
             {
                 var numberOfVoxels = m_parent.m_voxelConfig.VoxelVolumeConfig.NumberOfVoxels;
 
-                // // 1. Update boundaries from solid geometry
-                // await ExecuteComputeStepAsync("UpdateBoundaries", () =>
-                // {
-                //     m_parent.BindTexturesForKernel(m_parent.m_updateBoundariesFromSolidsKernel,
-                //         fluidData.FluidTextures, fluidData.SolidVoxelBuffer, false);
-                //     m_parent.m_fluidCompute.Dispatch(m_parent.m_updateBoundariesFromSolidsKernel, numberOfVoxels);
-                // }, cancellationToken);
-                //
+                // 1. Update boundaries from solid geometry
+                await ExecuteComputeStepAsync("UpdateBoundaries", () =>
+                {
+                    m_parent.BindTexturesForKernel(m_parent.m_updateBoundariesFromSolidsKernel,
+                        fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
+                    m_parent.m_fluidCompute.Dispatch(m_parent.m_updateBoundariesFromSolidsKernel, numberOfVoxels);
+                    fluidData.FluidTextures.SwapTextures(); // Swap after boundaries are updated
+                }, cancellationToken);
+                
                 // Debug.Log("UpdatedBoundaries");
 
                 // 2. Add fluid sources if present
@@ -452,11 +449,12 @@ namespace Tuntenfisch.Fluids
                         m_parent.BindTexturesForKernel(m_parent.m_addSourcesKernel,
                             fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
                         m_parent.m_fluidCompute.Dispatch(m_parent.m_addSourcesKernel, numberOfVoxels);
-                        fluidData.FluidTextures.SwapTextures(); // Swap after sources are added
+                        fluidData.FluidTextures.SwapDensityTextures(); // Swap after sources are added
+                        fluidData.FluidTextures.SwapVelocityTextures(); 
                     }, cancellationToken);
                 }
                 
-                Debug.Log("AddedSources");
+                // Debug.Log("AddedSources");
 
                 // 3. Advection step
                 await ExecuteComputeStepAsync("Advection", () =>
@@ -464,10 +462,11 @@ namespace Tuntenfisch.Fluids
                     m_parent.BindTexturesForKernel(m_parent.m_advectionKernel,
                         fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
                     m_parent.m_fluidCompute.Dispatch(m_parent.m_advectionKernel, numberOfVoxels);
-                    fluidData.FluidTextures.SwapTextures(); // Swap after advection
+                    fluidData.FluidTextures.SwapDensityTextures(); // Swap after sources are added
+                    fluidData.FluidTextures.SwapVelocityTextures(); 
                 }, cancellationToken);
                 
-                Debug.Log("Advected");
+                // Debug.Log("Advected");
 
                 // 4. Diffusion (viscosity) - optional
                 if (m_parent.m_viscosity > 0.001f)
@@ -477,11 +476,12 @@ namespace Tuntenfisch.Fluids
                         m_parent.BindTexturesForKernel(m_parent.m_diffusionKernel,
                             fluidData.FluidTextures, fluidData.SolidVoxelBuffer, true);
                         m_parent.m_fluidCompute.Dispatch(m_parent.m_diffusionKernel, numberOfVoxels);
-                        fluidData.FluidTextures.SwapTextures(); // Swap after diffusion
+                        fluidData.FluidTextures.SwapDensityTextures(); // Swap after diffusion
+                        fluidData.FluidTextures.SwapVelocityTextures(); 
                     }, cancellationToken);
                 }
                 
-                Debug.Log("Diffused");
+                // Debug.Log("Diffused");
 
                 // 5. Pressure projection (incompressibility)
                 await ExecutePressureProjectionAsync(fluidData, numberOfVoxels, cancellationToken);
@@ -506,9 +506,10 @@ namespace Tuntenfisch.Fluids
                     m_parent.BindTexturesForKernel(m_parent.m_computeDivergenceKernel,
                         textures, fluidData.SolidVoxelBuffer, false);
                     m_parent.m_fluidCompute.Dispatch(m_parent.m_computeDivergenceKernel, numberOfVoxels);
+                    // No swap
                 }, cancellationToken);
                 
-                Debug.Log("ComputedDivergence");
+                // Debug.Log("ComputedDivergence");
 
                 // Iterative pressure solve - spread across frames if needed
                 int iterationsPerFrame = math.max(1, m_parent.m_pressureIterations / m_parent.m_maxIterationsPerFrame);
@@ -529,7 +530,7 @@ namespace Tuntenfisch.Fluids
                     }, cancellationToken);
                 }
                 
-                Debug.Log("PressureSolved");
+                // Debug.Log("PressureSolved");
 
                 // Apply pressure gradient to velocity
                 await ExecuteComputeStepAsync("PressureProjection", () =>
@@ -540,7 +541,7 @@ namespace Tuntenfisch.Fluids
                     textures.SwapVelocityTextures(); // Only swap velocity textures
                 }, cancellationToken);
                 
-                Debug.Log("PressureProjected");
+                // Debug.Log("PressureProjected");
             }
 
             private async UniTask ExecuteComputeStepAsync(string stepName, System.Action computeAction,

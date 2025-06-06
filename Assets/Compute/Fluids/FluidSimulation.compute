@@ -243,12 +243,13 @@ void AddSources(uint3 id : SV_DispatchThreadID)
         float currentDensity = densityRead[id];
 
         // Add velocity and density
-        velocityWrite[id] = currentVel + sourceVelocity * falloff * deltaTime + gravity * deltaTime;
+        float3 newVelocity = currentVel + sourceVelocity * falloff * deltaTime + gravity * deltaTime;
+        velocityWrite[id] = clamp(newVelocity, -100.0, 100.0);
         densityWrite[id] = min(1.0, currentDensity + sourceDensity * falloff * deltaTime);
     }
     else
     {
-        velocityWrite[id] = velocityRead[id] + gravity * deltaTime;
+        velocityWrite[id] = clamp(velocityRead[id] + gravity * deltaTime, -100.0, 100.0);
         densityWrite[id] = densityRead[id];
     }
 }
@@ -331,8 +332,8 @@ void Diffusion(uint3 id : SV_DispatchThreadID)
         float3 averageVel = neighborSum / float(neighborCount);
         float averageDensity = neighborDensity / float(neighborCount);
         float diffusionRate = viscosity * deltaTime;
-        velocityWrite[id] = lerp(currentVel, averageVel, diffusionRate);
-        densityWrite[id] = lerp(currentDensity, averageDensity, diffusionRate);
+        velocityWrite[id] = clamp(lerp(currentVel, averageVel, diffusionRate), -100.0, 100.0);
+        densityWrite[id] = clamp(lerp(currentDensity, averageDensity, diffusionRate), 0.0, 1.0);
     }
     else
     {
@@ -377,7 +378,12 @@ void ComputeDivergence(uint3 id : SV_DispatchThreadID)
 [numthreads(4, 4, 4)]
 void PressureSolve(uint3 id : SV_DispatchThreadID)
 {
-    if (!IsValidCoord(id) || IsSolidAtCoord(id))
+    if (!IsValidCoord(id))
+    {
+        return;
+    }
+
+    if (IsSolidAtCoord(id))
     {
         pressureWrite[id] = 0.0;
         return;
@@ -408,7 +414,7 @@ void PressureSolve(uint3 id : SV_DispatchThreadID)
         }
         else if (IsSolidAtCoord(neighborCoord))
         {
-            pressureSum += pressureRead[id]; // Reflecting value
+            pressureSum += -pressureRead[id]; // Reflecting value?
             validNeighbors++;
         }
     }
@@ -417,11 +423,13 @@ void PressureSolve(uint3 id : SV_DispatchThreadID)
     {
         float alpha = -voxelSize * voxelSize;
         float beta = float(validNeighbors);
-        pressureWrite[id] = (pressureSum - alpha * div) / beta;
+        float newValue = (pressureSum - alpha * div) / beta;
+        newValue = clamp(newValue, -100.0, 100.0);
+        pressureWrite[id] = newValue;
     }
     else
     {
-        pressureWrite[id] = 0.0;
+        pressureWrite[id] = -pressureRead[id];
     }
 }
 
@@ -464,6 +472,7 @@ void PressureProjection(uint3 id : SV_DispatchThreadID)
     // Apply pressure gradient to make velocity field divergence-free
     // v_new = v_old - ∇p
     float3 newVelocity = currentVel - pressureGradient;
+    newVelocity = clamp(newVelocity, -100.0, 100.0);
 
     velocityWrite[id] = newVelocity;
 }
@@ -483,7 +492,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    float3 velocity = velocityWrite[id];
+    float3 velocity = velocityRead[id];
 
     // Apply no-slip boundary conditions at solid interfaces
     int3 offsets[6] = {
@@ -523,6 +532,7 @@ void ApplyBoundaries(uint3 id : SV_DispatchThreadID)
     if (id.z == 0 || id.z == dimensions.z - 1)
         velocity.z = 0.0;
 
+    velocity = clamp(velocity, -100.0, 100.0);
     velocityWrite[id] = velocity;
 }
 
