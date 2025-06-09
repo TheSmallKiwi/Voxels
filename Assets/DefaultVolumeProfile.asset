@@ -498,6 +498,25 @@ MonoBehaviour:
   - {fileID: 7879128496982330567}
   - {fileID: 6672912430384280461}
   - {fileID: 6394200818561964904}
+  - {fileID: 5863807359805799400}
+--- !u!114 &2117392232527820626
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: CustomVolumeComponent
+  m_EditorClassIdentifier: Assembly-CSharp::CustomVolumeComponent
+  active: 1
+  <displayName>k__BackingField: 
+  intensity:
+    <debugId>k__BackingField: intensity
+    m_OverrideState: 1
+    m_Value: 0
 --- !u!114 &3184924554573760580
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -582,6 +601,22 @@ MonoBehaviour:
   texture:
     m_OverrideState: 1
     m_Value: {fileID: 0}
+--- !u!114 &5863807359805799400
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: RayMarchVolumeComponent
+  m_EditorClassIdentifier: Assembly-CSharp::RayMarchVolumeComponent
+  active: 1
+  intensity:
+    m_OverrideState: 1
+    m_Value: 0
 --- !u!114 &6394200818561964904
 MonoBehaviour:
   m_ObjectHideFlags: 3
