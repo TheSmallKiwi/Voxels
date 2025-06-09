@@ -1,131 +1,120 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using Tuntenfisch.Fluids;
+using Tuntenfisch.Rendering;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.RenderGraphModule;
+using UnityEngine.Rendering.RenderGraphModule.Util;
+using UnityEngine.Rendering.Universal;
 
 namespace Tuntenfisch.Rendering
 {
-    /// <summary>
-    /// Volumetric renderer for fluid simulation using Graphics.RenderMesh with RenderParams.
-    /// Renders fluids directly from simulation textures without mesh conversion.
-    /// </summary>
-    public class VolumetricFluidRenderer : SceneViewFilter
+    public class VolumetricFluidRendererFeature : ScriptableRendererFeature
     {
-        [Header("Rendering Settings")] 
-        [SerializeField] private Material m_volumetricFluidMaterial;
-        [SerializeField] private int m_maxRaySteps = 128;
-        [SerializeField] private float m_stepSize = 0.5f;
-        [SerializeField] private float m_densityThreshold = 0.01f;
-        [SerializeField] private float m_absorptionStrength = 1.0f;
-        [SerializeField] private float m_scatteringStrength = 0.5f;
-        [SerializeField] private Color m_fluidColor = new Color(0.2f, 0.6f, 1.0f, 1.0f);
+        [SerializeField] private VolumetricFluidSettings settings;
+        [SerializeField] private Shader volumetricFluidShader;
+        private Material volumetricFluidMaterial;
+        private VolumetricFluidRenderPass volumetricFluidRenderPass;
 
-        [Header("Performance")] 
-        [SerializeField] private bool m_enableDepthCulling = true;
-        [SerializeField] private float m_maxRenderDistance = 100f;
-        [SerializeField] private int m_maxChunksPerFrame = 16;
-
-        [Header("Debug")]
-        [SerializeField] private bool m_enableDebugLogging;
-
-        private Camera m_camera;
-        private Mesh m_fullscreenQuad;
-        private MaterialPropertyBlock m_propertyBlock;
-
-        // Material property IDs
-        private int m_densityTextureID;
-        private int m_velocityTextureID;
-        private int m_cameraMatrixID;
-        private int m_invCameraMatrixID;
-        private int m_volumePositionID;
-        private int m_volumeSizeID;
-        private int m_maxStepsID;
-        private int m_stepSizeID;
-        private int m_densityThresholdID;
-        private int m_absorptionID;
-        private int m_scatteringID;
-        private int m_fluidColorID;
-
-        // Registered chunks for rendering
-        private Dictionary<int3, ChunkVolumetricData> m_activeChunks = new Dictionary<int3, ChunkVolumetricData>();
-        private List<ChunkVolumetricData> m_visibleChunks = new List<ChunkVolumetricData>();
-
-        private void Awake()
+        public override void Create()
         {
-            m_camera = GetComponent<Camera>();
-            if (m_camera == null)
+            if (volumetricFluidShader == null)
             {
-                m_camera = Camera.main;
-            }
-
-            InitializeResources();
-            CachePropertyIDs();
-        }
-
-        private void OnDestroy()
-        {
-            ReleaseResources();
-        }
-
-        private void InitializeResources()
-        {
-            // Create fullscreen quad for ray marching
-            m_fullscreenQuad = CreateFullscreenQuad();
-
-            // Create material property block for per-chunk properties
-            m_propertyBlock = new MaterialPropertyBlock();
-
-            // Validate material
-            if (m_volumetricFluidMaterial == null)
-            {
-                Debug.LogError("Volumetric fluid material not assigned!");
-                enabled = false;
+                Debug.LogError("VolumetricFluidRendererFeature: Shader not assigned!");
                 return;
             }
 
-            if (m_enableDebugLogging)
-            {
-                Debug.Log($"[VolumetricRenderer] Using material: {m_volumetricFluidMaterial.name}");
-                Debug.Log($"[VolumetricRenderer] Shader: {m_volumetricFluidMaterial.shader.name}");
-            }
-
-            // Test if shader compiles
-            if (!m_volumetricFluidMaterial.shader.isSupported)
-            {
-                Debug.LogError("Volumetric fluid shader is not supported on this platform!");
-            }
+            volumetricFluidMaterial = new Material(volumetricFluidShader);
+            volumetricFluidRenderPass = new VolumetricFluidRenderPass(volumetricFluidMaterial, settings);
+            
+            // Render after opaque but before transparent objects
+            volumetricFluidRenderPass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
         }
 
-        private void ReleaseResources()
+        public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
-            if (m_fullscreenQuad != null)
+            if (volumetricFluidRenderPass == null)
+                return;
+
+            // Only render for game cameras (not scene view, inspector previews, etc.)
+            if (renderingData.cameraData.cameraType == CameraType.Game)
             {
-                DestroyImmediate(m_fullscreenQuad);
+                renderer.EnqueuePass(volumetricFluidRenderPass);
             }
         }
 
-        private void CachePropertyIDs()
+        protected override void Dispose(bool disposing)
         {
-            m_densityTextureID = Shader.PropertyToID("_DensityTexture");
-            m_velocityTextureID = Shader.PropertyToID("_VelocityTexture");
-            m_cameraMatrixID = Shader.PropertyToID("_CameraToWorld");
-            m_invCameraMatrixID = Shader.PropertyToID("_CameraInvProjection");
-            m_volumePositionID = Shader.PropertyToID("_VolumePosition");
-            m_volumeSizeID = Shader.PropertyToID("_VolumeSize");
-            m_maxStepsID = Shader.PropertyToID("_MaxSteps");
-            m_stepSizeID = Shader.PropertyToID("_StepSize");
-            m_densityThresholdID = Shader.PropertyToID("_DensityThreshold");
-            m_absorptionID = Shader.PropertyToID("_AbsorptionStrength");
-            m_scatteringID = Shader.PropertyToID("_ScatteringStrength");
-            m_fluidColorID = Shader.PropertyToID("_FluidColor");
+            if (volumetricFluidMaterial != null)
+            {
+                if (Application.isPlaying)
+                {
+                    Destroy(volumetricFluidMaterial);
+                }
+                else
+                {
+                    DestroyImmediate(volumetricFluidMaterial);
+                }
+            }
+        }
+    }
+
+    [Serializable]
+    public class VolumetricFluidSettings
+    {
+        [Header("Volumetric Properties")]
+        [Range(32, 256)] public int maxRaySteps = 128;
+        [Range(0.1f, 2.0f)] public float stepSize = 0.5f;
+        [Range(0.001f, 0.1f)] public float densityThreshold = 0.01f;
+        
+        [Header("Lighting")]
+        [Range(0.0f, 5.0f)] public float absorptionStrength = 1.0f;
+        [Range(0.0f, 2.0f)] public float scatteringStrength = 0.5f;
+        public Color fluidColor = new Color(0.2f, 0.6f, 1.0f, 1.0f);
+        
+        [Header("Performance")]
+        [Range(0.5f, 2.0f)] public float renderScale = 1.0f;
+        public bool enableDepthCulling = true;
+        [Range(10f, 200f)] public float maxRenderDistance = 100f;
+        [Range(1, 32)] public int maxChunksPerFrame = 16;
+    }
+
+    public class VolumetricFluidRenderPass : ScriptableRenderPass
+    {
+        // Shader property IDs
+        private static readonly int s_densityTextureID = Shader.PropertyToID("_DensityTexture");
+        private static readonly int s_velocityTextureID = Shader.PropertyToID("_VelocityTexture");
+        // private static readonly int s_cameraMatrixID = Shader.PropertyToID("_CameraToWorld");
+        private static readonly int s_invCameraMatrixID = Shader.PropertyToID("_CameraInvProjection");
+        private static readonly int s_volumePositionID = Shader.PropertyToID("_VolumePosition");
+        private static readonly int s_volumeSizeID = Shader.PropertyToID("_VolumeSize");
+        private static readonly int s_maxStepsID = Shader.PropertyToID("_MaxSteps");
+        private static readonly int s_stepSizeID = Shader.PropertyToID("_StepSize");
+        private static readonly int s_densityThresholdID = Shader.PropertyToID("_DensityThreshold");
+        private static readonly int s_absorptionID = Shader.PropertyToID("_AbsorptionStrength");
+        private static readonly int s_scatteringID = Shader.PropertyToID("_ScatteringStrength");
+        private static readonly int s_fluidColorID = Shader.PropertyToID("_FluidColor");
+
+        private const string k_VolumetricFluidTextureName = "_VolumetricFluidTexture";
+        private const string k_PassName = "VolumetricFluidRenderPass";
+
+        private VolumetricFluidSettings m_defaultSettings;
+        private Material m_material;
+
+        // Chunk tracking
+        private static Dictionary<int3, ChunkVolumetricData> s_activeChunks = new Dictionary<int3, ChunkVolumetricData>();
+        private List<ChunkVolumetricData> m_visibleChunks = new List<ChunkVolumetricData>();
+
+        public VolumetricFluidRenderPass(Material material, VolumetricFluidSettings defaultSettings)
+        {
+            m_material = material;
+            m_defaultSettings = defaultSettings;
         }
 
-        /// <summary>
-        /// Register a chunk for volumetric rendering
-        /// </summary>
-        public void RegisterChunk(int3 chunkCoordinate, ChunkFluidTextures fluidData, Vector3 worldPosition, Vector3 volumeSize)
+        // Static methods for chunk registration (called from chunk systems)
+        public static void RegisterChunk(int3 chunkCoordinate, ChunkFluidTextures fluidData, Vector3 worldPosition, Vector3 volumeSize)
         {
             if (fluidData == null || !fluidData.IsValid())
                 return;
@@ -139,249 +128,178 @@ namespace Tuntenfisch.Rendering
                 ChunkCoordinate = chunkCoordinate
             };
 
-            m_activeChunks[chunkCoordinate] = chunkData;
-
-            if (m_enableDebugLogging)
-            {
-                Debug.Log($"[VolumetricRenderer] Registered chunk {chunkCoordinate} at {worldPosition}");
-            }
+            s_activeChunks[chunkCoordinate] = chunkData;
         }
 
-        /// <summary>
-        /// Unregister a chunk from volumetric rendering
-        /// </summary>
-        public void UnregisterChunk(int3 chunkCoordinate)
+        public static void UnregisterChunk(int3 chunkCoordinate)
         {
-            if (m_activeChunks.Remove(chunkCoordinate) && m_enableDebugLogging)
-            {
-                Debug.Log($"[VolumetricRenderer] Unregistered chunk {chunkCoordinate}");
-            }
+            s_activeChunks.Remove(chunkCoordinate);
         }
 
-        private void Update()
+        public static void ClearAllChunks()
         {
-            if (m_camera == null || m_volumetricFluidMaterial == null || m_fullscreenQuad == null)
-                return;
-
-            // Cull and sort chunks
-            UpdateVisibleChunks();
-
-            // Set global rendering parameters
-            SetGlobalRenderingParameters();
-
-            // Render visible chunks using Graphics.RenderMesh
-            RenderVisibleChunks();
+            s_activeChunks.Clear();
         }
 
-        private void UpdateVisibleChunks()
+        public static int GetActiveChunkCount() => s_activeChunks.Count;
+
+        private void UpdateVolumetricSettings()
+        {
+            if (m_material == null) return;
+
+            // Use Volume settings or default settings
+            var volumeComponent = VolumeManager.instance.stack.GetComponent<VolumetricFluidVolumeComponent>();
+            
+            int maxSteps = volumeComponent.maxRaySteps.overrideState ? 
+                volumeComponent.maxRaySteps.value : m_defaultSettings.maxRaySteps;
+            float stepSize = volumeComponent.stepSize.overrideState ? 
+                volumeComponent.stepSize.value : m_defaultSettings.stepSize;
+            float densityThreshold = volumeComponent.densityThreshold.overrideState ? 
+                volumeComponent.densityThreshold.value : m_defaultSettings.densityThreshold;
+            float absorption = volumeComponent.absorptionStrength.overrideState ? 
+                volumeComponent.absorptionStrength.value : m_defaultSettings.absorptionStrength;
+            float scattering = volumeComponent.scatteringStrength.overrideState ? 
+                volumeComponent.scatteringStrength.value : m_defaultSettings.scatteringStrength;
+            Color fluidColor = volumeComponent.fluidColor.overrideState ? 
+                volumeComponent.fluidColor.value : m_defaultSettings.fluidColor;
+
+            // Set material properties
+            m_material.SetInt(s_maxStepsID, maxSteps);
+            m_material.SetFloat(s_stepSizeID, stepSize);
+            m_material.SetFloat(s_densityThresholdID, densityThreshold);
+            m_material.SetFloat(s_absorptionID, absorption);
+            m_material.SetFloat(s_scatteringID, scattering);
+            m_material.SetColor(s_fluidColorID, fluidColor);
+        }
+
+        private void UpdateVisibleChunks(Camera camera)
         {
             m_visibleChunks.Clear();
 
-            Vector3 cameraPos = m_camera.transform.position;
+            if (s_activeChunks.Count == 0)
+                return;
 
-            foreach (var chunkData in m_activeChunks.Values)
+            Vector3 cameraPos = camera.transform.position;
+
+            foreach (var chunkData in s_activeChunks.Values)
             {
                 // Distance culling
                 float distanceToCamera = Vector3.Distance(cameraPos, chunkData.WorldPosition);
-                if (m_enableDepthCulling && distanceToCamera > m_maxRenderDistance)
+                if (m_defaultSettings.enableDepthCulling && distanceToCamera > m_defaultSettings.maxRenderDistance)
                     continue;
 
-                // Frustum culling (simple bounds check)
-                if (m_enableDepthCulling && !IsChunkInCameraFrustum(chunkData))
+                // Simple frustum culling
+                if (m_defaultSettings.enableDepthCulling && !IsChunkInCameraFrustum(camera, chunkData))
                     continue;
 
                 chunkData.DistanceToCamera = distanceToCamera;
                 m_visibleChunks.Add(chunkData);
             }
 
-            // Sort by distance (back to front for transparency)
+            // Sort by distance (back to front for proper alpha blending)
             m_visibleChunks.Sort((a, b) => b.DistanceToCamera.CompareTo(a.DistanceToCamera));
 
             // Limit chunks per frame for performance
-            if (m_visibleChunks.Count > m_maxChunksPerFrame)
+            if (m_visibleChunks.Count > m_defaultSettings.maxChunksPerFrame)
             {
-                m_visibleChunks.RemoveRange(m_maxChunksPerFrame, m_visibleChunks.Count - m_maxChunksPerFrame);
+                m_visibleChunks.RemoveRange(m_defaultSettings.maxChunksPerFrame, 
+                    m_visibleChunks.Count - m_defaultSettings.maxChunksPerFrame);
             }
         }
 
-        private bool IsChunkInCameraFrustum(ChunkVolumetricData chunkData)
+        private bool IsChunkInCameraFrustum(Camera camera, ChunkVolumetricData chunkData)
         {
-            // Simple sphere-frustum test
             var bounds = new Bounds(chunkData.WorldPosition, chunkData.VolumeSize);
-            return GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(m_camera), bounds);
+            return GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(camera), bounds);
         }
 
-        private void SetGlobalRenderingParameters()
+        public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
         {
-            // Camera matrices for ray reconstruction
-            Matrix4x4 cameraToWorld = m_camera.cameraToWorldMatrix;
-            Matrix4x4 invProjection = m_camera.projectionMatrix.inverse;
+            UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
+            UniversalCameraData cameraData = frameData.Get<UniversalCameraData>();
 
-            Shader.SetGlobalMatrix(m_cameraMatrixID, cameraToWorld);
-            Shader.SetGlobalMatrix(m_invCameraMatrixID, invProjection);
+            // Don't render if we're rendering to back buffer or no chunks are active
+            if (resourceData.isActiveTargetBackBuffer || s_activeChunks.Count == 0)
+                return;
 
-            // Global rendering parameters
-            Shader.SetGlobalInt(m_maxStepsID, m_maxRaySteps);
-            Shader.SetGlobalFloat(m_stepSizeID, m_stepSize);
-            Shader.SetGlobalFloat(m_densityThresholdID, m_densityThreshold);
-            Shader.SetGlobalFloat(m_absorptionID, m_absorptionStrength);
-            Shader.SetGlobalFloat(m_scatteringID, m_scatteringStrength);
-            Shader.SetGlobalColor(m_fluidColorID, m_fluidColor);
-        }
+            // Update visible chunks and settings
+            UpdateVisibleChunks(cameraData.camera);
+            UpdateVolumetricSettings();
 
-        private void RenderVisibleChunks()
-        {
-            foreach (var chunkData in m_visibleChunks)
+            if (m_visibleChunks.Count == 0)
+                return;
+
+            // Set up camera matrices for ray reconstruction
+            // Matrix4x4 cameraToWorld = cameraData.camera.cameraToWorldMatrix;
+            Matrix4x4 invProjection = cameraData.camera.projectionMatrix.inverse;
+            // m_material.SetMatrix(s_cameraMatrixID, cameraToWorld);
+            m_material.SetMatrix(s_invCameraMatrixID, invProjection);
+
+            // Get source and create destination texture
+            TextureHandle srcCamColor = resourceData.activeColorTexture;
+            var volumetricTextureDesc = srcCamColor.GetDescriptor(renderGraph);
+            volumetricTextureDesc.name = k_VolumetricFluidTextureName;
+            volumetricTextureDesc.depthBufferBits = 0;
+            
+            // Apply render scale for performance
+            if (!Mathf.Approximately(m_defaultSettings.renderScale, 1.0f))
             {
-                RenderChunkVolume(chunkData);
+                volumetricTextureDesc.width = Mathf.RoundToInt(volumetricTextureDesc.width * m_defaultSettings.renderScale);
+                volumetricTextureDesc.height = Mathf.RoundToInt(volumetricTextureDesc.height * m_defaultSettings.renderScale);
             }
 
-            if (m_enableDebugLogging && m_visibleChunks.Count > 0)
+            var volumetricTexture = renderGraph.CreateTexture(volumetricTextureDesc);
+
+            // Validity check
+            if (!srcCamColor.IsValid() || !volumetricTexture.IsValid())
+                return;
+
+            // Clear volumetric texture first
+            var clearParams = new RenderGraphUtils.BlitMaterialParameters(srcCamColor, volumetricTexture, m_material, -1);
+            renderGraph.AddBlitPass(clearParams, "ClearVolumetricTexture");
+
+            // Add volumetric pass for each visible chunk
+            for (int i = 0; i < m_visibleChunks.Count; i++)
             {
-                Debug.Log($"[VolumetricRenderer] Rendered {m_visibleChunks.Count} chunks");
+                var chunkData = m_visibleChunks[i];
+                AddVolumetricFluidChunkPass(renderGraph, chunkData, volumetricTexture, srcCamColor, i);
             }
-        }
 
-        private void RenderChunkVolume(ChunkVolumetricData chunkData)
-        {
-            // Set chunk-specific properties in MaterialPropertyBlock
-            m_propertyBlock.SetTexture(m_densityTextureID, chunkData.fluidData.DensityRead);
-            m_propertyBlock.SetTexture(m_velocityTextureID, chunkData.fluidData.VelocityRead);
-            m_propertyBlock.SetVector(m_volumePositionID, chunkData.WorldPosition);
-            m_propertyBlock.SetVector(m_volumeSizeID, chunkData.VolumeSize);
-
-            // Create RenderParams with material and property block
-            RenderParams renderParams = new RenderParams(m_volumetricFluidMaterial)
+            // Final composite pass
+            if (!Mathf.Approximately(m_defaultSettings.renderScale, 1.0f))
             {
-                matProps = m_propertyBlock,
-                layer = gameObject.layer,
-                rendererPriority = 0,
-                worldBounds = new Bounds(chunkData.WorldPosition, chunkData.VolumeSize),
-                // camera = m_camera,
-                motionVectorMode = MotionVectorGenerationMode.Camera,
-                reflectionProbeUsage = ReflectionProbeUsage.Off,
-                shadowCastingMode = ShadowCastingMode.Off,
-                receiveShadows = false,
-                lightProbeUsage = LightProbeUsage.Off
-            };
-
-            // Render the fullscreen quad with volumetric material
-            Graphics.RenderMesh(renderParams, m_fullscreenQuad, 0, m_camera.cameraToWorldMatrix);
-        }
-
-        private Mesh CreateFullscreenQuad()
-        {
-            var mesh = new Mesh();
-            mesh.name = "Volumetric Fluid Quad";
-
-            Vector3[] vertices = {
-                new(-1, -1, -0.5f),
-                new(-1, 1, -0.5f),
-                new(1, 1, -0.5f),
-                new(1, -1, -0.5f)
-            };
-
-            Vector2[] uvs = {
-                new(0, 0),
-                new(0, 1),
-                new(1, 1),
-                new(1, 0)
-            };
-
-            int[] triangles = {
-                0, 1, 2,
-                0, 2, 3
-            };
-
-            mesh.vertices = vertices;
-            mesh.uv = uvs;
-            mesh.triangles = triangles;
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-
-            return mesh;
-        }
-
-        /// <summary>
-        /// Update rendering settings at runtime
-        /// </summary>
-        public void UpdateRenderingSettings(int maxSteps, float stepSize, float densityThreshold,
-            float absorption, float scattering, Color fluidColor)
-        {
-            m_maxRaySteps = maxSteps;
-            m_stepSize = stepSize;
-            m_densityThreshold = densityThreshold;
-            m_absorptionStrength = absorption;
-            m_scatteringStrength = scattering;
-            m_fluidColor = fluidColor;
-        }
-
-        /// <summary>
-        /// Get current chunk count for debugging
-        /// </summary>
-        public int GetActiveChunkCount() => m_activeChunks.Count;
-
-        /// <summary>
-        /// Get visible chunk count for debugging
-        /// </summary>
-        public int GetVisibleChunkCount() => m_visibleChunks.Count;
-
-        /// <summary>
-        /// Clear all registered chunks
-        /// </summary>
-        public void ClearAllChunks()
-        {
-            m_activeChunks.Clear();
-            m_visibleChunks.Clear();
-        }
-
-        /// <summary>
-        /// Force render a single chunk for testing
-        /// </summary>
-        [ContextMenu("Test Render First Chunk")]
-        public void TestRenderFirstChunk()
-        {
-            if (m_activeChunks.Count > 0)
-            {
-                var firstChunk = m_activeChunks.Values.First();
-                SetGlobalRenderingParameters();
-                RenderChunkVolume(firstChunk);
-                Debug.Log($"[VolumetricRenderer] Test rendered chunk at {firstChunk.WorldPosition}");
+                // Upscale back to full resolution
+                RenderGraphUtils.BlitMaterialParameters upscaleParams = 
+                    new(volumetricTexture, srcCamColor, m_material, 2); // Pass 2 is upscale
+                renderGraph.AddBlitPass(upscaleParams, "VolumetricFluidUpscale");
             }
             else
             {
-                Debug.LogWarning("[VolumetricRenderer] No chunks available for test render");
+                // Direct composite
+                RenderGraphUtils.BlitMaterialParameters compositeParams = 
+                    new(volumetricTexture, srcCamColor, m_material, 1); // Pass 1 is composite
+                renderGraph.AddBlitPass(compositeParams, "VolumetricFluidComposite");
             }
         }
 
-        /// <summary>
-        /// Debug information about current state
-        /// </summary>
-        [ContextMenu("Debug Renderer State")]
-        public void DebugRendererState()
+        private void AddVolumetricFluidChunkPass(RenderGraph renderGraph, ChunkVolumetricData chunkData, 
+            TextureHandle destination, TextureHandle source, int chunkIndex)
         {
-            Debug.Log("=== VolumetricFluidRenderer Debug ===");
-            Debug.Log($"Active Chunks: {m_activeChunks.Count}");
-            Debug.Log($"Visible Chunks: {m_visibleChunks.Count}");
-            Debug.Log($"Camera: {(m_camera ? m_camera.name : "None")}");
-            Debug.Log($"Material: {(m_volumetricFluidMaterial ? m_volumetricFluidMaterial.name : "None")}");
-            Debug.Log($"Mesh: {(m_fullscreenQuad ? "Valid" : "None")}");
-            Debug.Log($"Max Render Distance: {m_maxRenderDistance}");
-            Debug.Log($"Max Chunks Per Frame: {m_maxChunksPerFrame}");
+            // Set chunk-specific material properties before the blit
+            m_material.SetTexture(s_densityTextureID, chunkData.fluidData.DensityRead);
+            m_material.SetTexture(s_velocityTextureID, chunkData.fluidData.VelocityRead);
+            m_material.SetVector(s_volumePositionID, chunkData.WorldPosition);
+            m_material.SetVector(s_volumeSizeID, chunkData.VolumeSize);
 
-            if (m_activeChunks.Count > 0)
-            {
-                Debug.Log($"Sample chunk position: {m_activeChunks.Values.First().WorldPosition}");
-                Debug.Log($"Sample chunk size: {m_activeChunks.Values.First().VolumeSize}");
-            }
-            Debug.Log("=====================================");
+            // Use blit with volumetric pass (pass 0)
+            RenderGraphUtils.BlitMaterialParameters blitParams = 
+                new(source, destination, m_material, 0);
+            renderGraph.AddBlitPass(blitParams, $"{k_PassName}_Chunk{chunkIndex}");
         }
     }
 
-    /// <summary>
-    /// Data structure for chunk volumetric rendering
-    /// </summary>
-    [System.Serializable]
+    // Updated chunk data structure
+    [Serializable]
     public class ChunkVolumetricData
     {
         public ChunkFluidTextures fluidData;
@@ -390,5 +308,23 @@ namespace Tuntenfisch.Rendering
         public float LastUpdateTime;
         public int3 ChunkCoordinate;
         public float DistanceToCamera; // Used for sorting
+    }
+}
+
+// Extension methods for integration
+namespace Tuntenfisch.Fluids
+{
+    public static class VolumetricFluidExtensions
+    {
+        public static void RegisterForVolumetricRendering(this ChunkFluidTextures fluidData,
+            int3 chunkCoordinate, Vector3 worldPosition, Vector3 volumeSize)
+        {
+            Tuntenfisch.Rendering.VolumetricFluidRenderPass.RegisterChunk(chunkCoordinate, fluidData, worldPosition, volumeSize);
+        }
+
+        public static void UnregisterFromVolumetricRendering(int3 chunkCoordinate)
+        {
+            Tuntenfisch.Rendering.VolumetricFluidRenderPass.UnregisterChunk(chunkCoordinate);
+        }
     }
 }

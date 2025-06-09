@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-2053302705193667913
+--- !u!114 &-1535233030134846907
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -9,13 +9,22 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e5beaeee394be6c40a92fa8eb3746b51, type: 3}
-  m_Name: RayMarchRendererFeature
+  m_Script: {fileID: 11500000, guid: 09d6e5aeaeb23984c8cf0b1a98c9537b, type: 3}
+  m_Name: VolumetricFluidRendererFeature
   m_EditorClassIdentifier: 
   m_Active: 1
   settings:
-    intensity: 0
-  rayMarchShader: {fileID: 4800000, guid: 65754fa59b0085b4192ecbaadab5cf6e, type: 3}
+    maxRaySteps: 128
+    stepSize: 0.5
+    densityThreshold: 0.01
+    absorptionStrength: 1
+    scatteringStrength: 0.5
+    fluidColor: {r: 0.2, g: 0.6, b: 1, a: 1}
+    renderScale: 1
+    enableDepthCulling: 1
+    maxRenderDistance: 100
+    maxChunksPerFrame: 16
+  volumetricFluidShader: {fileID: 4800000, guid: 85e430f15009ba84c8bd3cb14da88bba, type: 3}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -41,8 +50,8 @@ MonoBehaviour:
     probeSamplingDebugTexture: {fileID: 0}
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
-  - {fileID: -2053302705193667913}
-  m_RendererFeatureMap: b7329588113481e3
+  - {fileID: -1535233030134846907}
+  m_RendererFeatureMap: 45aa5d6fb1c1b1ea
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}

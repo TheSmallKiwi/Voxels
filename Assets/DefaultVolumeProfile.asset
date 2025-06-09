@@ -189,6 +189,37 @@ MonoBehaviour:
         m_PreInfinity: 2
         m_PostInfinity: 2
         m_RotationOrder: 4
+--- !u!114 &-8496214994439871354
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc1db08df83e4b49877348fc8d61b2e9, type: 3}
+  m_Name: VolumetricFluidVolumeComponent
+  m_EditorClassIdentifier: 
+  active: 1
+  maxRaySteps:
+    m_OverrideState: 1
+    m_Value: 128
+  stepSize:
+    m_OverrideState: 1
+    m_Value: 0.5
+  densityThreshold:
+    m_OverrideState: 1
+    m_Value: 0.01
+  absorptionStrength:
+    m_OverrideState: 1
+    m_Value: 1
+  scatteringStrength:
+    m_OverrideState: 1
+    m_Value: 0.5
+  fluidColor:
+    m_OverrideState: 1
+    m_Value: {r: 0.2, g: 0.6, b: 1, a: 1}
 --- !u!114 &-7435556908708020291
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -432,6 +463,25 @@ MonoBehaviour:
   intensity:
     m_OverrideState: 1
     m_Value: 0
+--- !u!114 &-1844661988690042216
+MonoBehaviour:
+  m_ObjectHideFlags: 3
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07812db16bba4aae934b889c48127632, type: 3}
+  m_Name: CustomVolumeComponent
+  m_EditorClassIdentifier: 
+  active: 1
+  horizontalBlur:
+    m_OverrideState: 1
+    m_Value: 0.05
+  verticalBlur:
+    m_OverrideState: 1
+    m_Value: 0.05
 --- !u!114 &-1300756419571631361
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -498,7 +548,8 @@ MonoBehaviour:
   - {fileID: 7879128496982330567}
   - {fileID: 6672912430384280461}
   - {fileID: 6394200818561964904}
-  - {fileID: 5863807359805799400}
+  - {fileID: -1844661988690042216}
+  - {fileID: -8496214994439871354}
 --- !u!114 &2117392232527820626
 MonoBehaviour:
   m_ObjectHideFlags: 3
@@ -614,7 +665,9 @@ MonoBehaviour:
   m_Name: RayMarchVolumeComponent
   m_EditorClassIdentifier: Assembly-CSharp::RayMarchVolumeComponent
   active: 1
+  <displayName>k__BackingField: 
   intensity:
+    <debugId>k__BackingField: intensity
     m_OverrideState: 1
     m_Value: 0
 --- !u!114 &6394200818561964904

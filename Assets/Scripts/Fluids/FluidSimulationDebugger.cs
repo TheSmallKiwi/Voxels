@@ -359,14 +359,12 @@ namespace Tuntenfisch.World
         [ContextMenu("Debug Volumetric Renderer")]
         private void DebugVolumetricRenderer()
         {
-            var fRenderer = FindFirstObjectByType<VolumetricFluidRenderer>();
+            var fRenderer = FindFirstObjectByType<VolumetricFluidRendererFeature>();
             if (fRenderer == null)
             {
                 Debug.LogError("VolumetricFluidRenderer not found!");
                 return;
             }
-    
-            Debug.Log($"Active chunks in renderer: {fRenderer.GetActiveChunkCount()}");
     
             // Check if any chunks have valid fluid data
             var chunks = WorldManager.Instance.GetActiveChunks();
