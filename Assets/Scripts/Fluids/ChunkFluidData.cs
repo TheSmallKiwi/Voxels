@@ -22,6 +22,8 @@ namespace Tuntenfisch.Fluids
         public bool HasFluidSource => FluidSource is { IsActive: true };
         public FluidSourceData FluidSource { get; set; }
         
+        private GameObject m_fluidChunkObject;
+        
         // Simulation timing and state
         private float m_lastSimulationTime = 0f;
         private float m_accumulatedTime = 0f;
@@ -39,7 +41,7 @@ namespace Tuntenfisch.Fluids
             return FluidTextures != null && FluidTextures.IsValid();
         }
 
-        public void Initialize(int3 dimensions, float3 worldPosition, ComputeBuffer solidVoxels)
+        public void Initialize(int3 dimensions, float3 worldPosition, ComputeBuffer solidVoxels, GameObject fluidChunk)
         {
             // Store solid voxel buffer
             m_solidVoxelBuffer = solidVoxels;
@@ -48,6 +50,10 @@ namespace Tuntenfisch.Fluids
             
             // Create fluid textures using the factory
             FluidTextures = FluidTextureFactory.CreateFluidTextures(dimensions);
+            
+            // Set up fluid volume
+            m_fluidChunkObject = fluidChunk;
+            m_fluidChunkObject.transform.localScale = new Vector3(dimensions.x, dimensions.y, dimensions.z);
             
             // Reset state
             ResetSimulationState();
@@ -202,13 +208,16 @@ namespace Tuntenfisch.Fluids
         {
             if (IsValid())
             {
-                FluidTextures.RegisterForVolumetricRendering(chunkCoordinate, WorldPosition, volumeSize);
+                // FluidTextures.RegisterForVolumetricRendering(chunkCoordinate, WorldPosition, volumeSize);
+                m_fluidChunkObject.SetActive(true);
+                m_fluidChunkObject.GetComponent<MeshRenderer>().sharedMaterial.SetTexture("_densityTex", FluidTextures.DensityRead);
             }
         }
 
         public void UnregisterFromVolumetricRendering(int3 chunkCoordinate)
         {
-            VolumetricFluidExtensions.UnregisterFromVolumetricRendering(chunkCoordinate);
+            // VolumetricFluidExtensions.UnregisterFromVolumetricRendering(chunkCoordinate);
+            m_fluidChunkObject.SetActive(false);
         }
 
         // Method to check if chunk needs fluid simulation update

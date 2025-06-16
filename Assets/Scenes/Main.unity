@@ -321,21 +321,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 146275a8cf684fcc85f95022d52e2f73, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_enableDebugLogging: 1
+  m_enableDebugLogging: 0
   m_visualizeFluidVolume: 1
   m_textureSliceDepth: 32
-  m_densityMultiplier: 10
-  m_velocityScale: 5
+  m_densityMultiplier: 1
+  m_velocityScale: 1
   m_showDensityTexture: 1
   m_showVelocityTexture: 1
   m_showPressureTexture: 1
   m_textureDisplaySize: {x: 256, y: 256}
   m_textureDisplayOffset: {x: 10, y: 10}
   m_testSourceOffset: {x: 0, y: 20, z: 20}
-  m_testSourceRadius: 20
-  m_testSourceAmount: 10
+  m_testSourceRadius: 5
+  m_testSourceAmount: 100
   m_testSourceVelocity: {x: -1, y: 2, z: -1}
-  m_testSourceDuration: 20
+  m_testSourceDuration: 60
   m_currentDensitySlice: {fileID: 0}
   m_currentVelocitySlice: {fileID: 0}
   m_currentPressureSlice: {fileID: 0}
@@ -799,7 +799,7 @@ MonoBehaviour:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 186161280}
   - {fileID: 1266502064}
   - {fileID: 1023658864}
   - {fileID: 337836004}
-  - {fileID: 186161280}

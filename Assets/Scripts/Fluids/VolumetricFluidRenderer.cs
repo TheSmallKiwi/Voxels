@@ -38,11 +38,13 @@ namespace Tuntenfisch.Rendering
             if (volumetricFluidRenderPass == null)
                 return;
 
+            renderer.EnqueuePass(volumetricFluidRenderPass);
+            
             // Only render for game cameras (not scene view, inspector previews, etc.)
-            if (renderingData.cameraData.cameraType == CameraType.Game)
-            {
-                renderer.EnqueuePass(volumetricFluidRenderPass);
-            }
+            // if (renderingData.cameraData.cameraType == CameraType.Game)
+            // {
+            //     
+            // }
         }
 
         protected override void Dispose(bool disposing)
@@ -104,13 +106,15 @@ namespace Tuntenfisch.Rendering
         private Material m_material;
 
         // Chunk tracking
-        private static Dictionary<int3, ChunkVolumetricData> s_activeChunks = new Dictionary<int3, ChunkVolumetricData>();
-        private List<ChunkVolumetricData> m_visibleChunks = new List<ChunkVolumetricData>();
+        private static Dictionary<int3, ChunkVolumetricData> s_activeChunks;
+        private List<ChunkVolumetricData> m_visibleChunks;
 
         public VolumetricFluidRenderPass(Material material, VolumetricFluidSettings defaultSettings)
         {
             m_material = material;
             m_defaultSettings = defaultSettings;
+            m_visibleChunks = new List<ChunkVolumetricData>();
+            s_activeChunks = new Dictionary<int3, ChunkVolumetricData>();
         }
 
         // Static methods for chunk registration (called from chunk systems)

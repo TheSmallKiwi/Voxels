@@ -243,7 +243,7 @@ void AddSources(uint3 id : SV_DispatchThreadID)
         float currentDensity = densityRead[id];
 
         // Add velocity and density
-        float3 newVelocity = currentVel + sourceVelocity * falloff * deltaTime + gravity * deltaTime;
+        float3 newVelocity = currentVel + sourceVelocity * falloff * deltaTime;
         velocityWrite[id] = clamp(newVelocity, -100.0, 100.0);
         densityWrite[id] = min(1.0, currentDensity + sourceDensity * falloff * deltaTime);
     }
@@ -291,8 +291,8 @@ void Advection(uint3 id : SV_DispatchThreadID)
     float advectedDensity = SampleDensity(targetPos);
 
     // Apply dissipation
-    velocityWrite[id] = advectedVelocity * velocityDissipation;
-    densityWrite[id] = advectedDensity * densityDissipation;
+    velocityWrite[id] = advectedVelocity; // * velocityDissipation
+    densityWrite[id] = advectedDensity; // * densityDissipation
 }
 
 [numthreads(4, 4, 4)]

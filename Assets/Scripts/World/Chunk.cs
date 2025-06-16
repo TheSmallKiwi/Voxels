@@ -303,8 +303,9 @@ namespace Tuntenfisch.World
 
             var dimensions = WorldManager.VoxelConfig.VoxelVolumeConfig.NumberOfVoxels;
             m_fluidData = new ChunkFluidData();
-            m_fluidData.Initialize(dimensions, transform.position, m_voxelVolumeBuffer);
-            ;
+            var fluidVolume = transform.GetChild(0).gameObject;
+            m_fluidData.Initialize(dimensions, transform.position, m_voxelVolumeBuffer, fluidVolume);
+            
 
             // Initialize fluid textures through simulation system
             if (WorldManager.FluidSimulation != null && WorldManager.FluidSimulation.IsSimulationEnabled)
