@@ -1,4 +1,4 @@
-﻿using Tuntenfisch.Attributes;
+﻿using Attributes;
 using UnityEditor;
 using UnityEngine;
 

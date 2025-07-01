@@ -1,11 +1,11 @@
-using Tuntenfisch.Voxels.CSG;
-using Tuntenfisch.Voxels.Materials;
-using Tuntenfisch.World;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Voxels.CSG;
+using Voxels.Materials;
+using World;
 
-namespace Tuntenfisch.Player
+namespace Player
 {
     [RequireComponent(typeof(CharacterController), typeof(PlayerInput))]
     public class PlayerController : MonoBehaviour

@@ -1,9 +1,9 @@
 ﻿using System.Runtime.InteropServices;
-using Tuntenfisch.Voxels.Materials;
 using Unity.Mathematics;
 using UnityEngine.Rendering;
+using Voxels.Materials;
 
-namespace Tuntenfisch.Voxels.DC
+namespace Voxels.DC
 {
     [StructLayout(LayoutKind.Sequential)]
     public struct GPUVertex

@@ -1,10 +1,11 @@
 ﻿using System;
 using System.Runtime.InteropServices;
-using Tuntenfisch.Voxels.CSG;
-using Tuntenfisch.Voxels.Materials;
 using UnityEngine;
+using Voxels.CSG;
+using Voxels.Materials;
+using Voxels.Noise;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [Serializable]
     [StructLayout(LayoutKind.Sequential)]

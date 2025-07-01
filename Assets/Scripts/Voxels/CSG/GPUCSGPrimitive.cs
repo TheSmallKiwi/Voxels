@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace Tuntenfisch.Voxels.CSG
+namespace Voxels.CSG
 {
     [Serializable]
     [StructLayout(LayoutKind.Sequential)]

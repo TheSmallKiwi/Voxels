@@ -1,15 +1,15 @@
-﻿using Cysharp.Threading.Tasks;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Tuntenfisch.Extensions;
-using Tuntenfisch.Generics;
-using Tuntenfisch.Generics.Pool;
+using Cysharp.Threading.Tasks;
+using Extensions;
+using Generics;
+using Generics.Pool;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace Tuntenfisch.Voxels.DC
+namespace Voxels.DC
 {
     [RequireComponent(typeof(VoxelConfig))]
     public class DualContouring : MonoBehaviour

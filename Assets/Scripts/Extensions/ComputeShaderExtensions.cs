@@ -1,7 +1,7 @@
 ﻿using Unity.Mathematics;
 using UnityEngine;
 
-namespace Tuntenfisch.Extensions
+namespace Extensions
 {
     public static class ComputeShaderExtensions
     {

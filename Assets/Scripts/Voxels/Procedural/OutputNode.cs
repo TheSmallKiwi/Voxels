@@ -1,7 +1,7 @@
 ﻿using Unity.Mathematics;
 using UnityEngine;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/Output", order = (int)NodeType.Output)]
     [DisallowMultipleNodes]

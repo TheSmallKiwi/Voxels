@@ -1,17 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
-using Tuntenfisch.Generics;
-using Tuntenfisch.Generics.Pool;
-using Tuntenfisch.Voxels;
-using Tuntenfisch.Voxels.CSG;
-using Tuntenfisch.Voxels.DC;
-using Tuntenfisch.Voxels.Materials;
-using Tuntenfisch.Voxels.Volume;
+using Generics;
+using Generics.Pool;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Assertions;
+using Voxels;
+using Voxels.CSG;
+using Voxels.DC;
+using Voxels.Materials;
+using Voxels.Volume;
 
-namespace Tuntenfisch.World
+namespace World
 {
     /// <summary>
     /// Manages voxel-related components and operations in the world, serving as a high-level interface for voxel manipulation and rendering.

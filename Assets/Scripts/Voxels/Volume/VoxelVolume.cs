@@ -1,11 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using Tuntenfisch.Extensions;
-using Tuntenfisch.Voxels.Procedural;
+using Extensions;
 using Unity.Mathematics;
 using UnityEngine;
+using Voxels.Procedural;
 
-namespace Tuntenfisch.Voxels.Volume
+namespace Voxels.Volume
 {
     /// <summary>
     /// Represents a voxel-based volume that handles generation and modification of voxel data

@@ -1,6 +1,7 @@
 using Tuntenfisch.Editor;
 using Unity.Mathematics;
 using UnityEditor;
+using World;
 
 namespace Tuntenfisch.World.Editor
 {

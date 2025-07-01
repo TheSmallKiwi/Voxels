@@ -1,18 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
-using Tuntenfisch.Generics;
-using Tuntenfisch.Generics.Pool;
-using Tuntenfisch.Voxels.CSG;
-using Tuntenfisch.Voxels.DC;
-using Tuntenfisch.Voxels.Materials;
-using Tuntenfisch.Voxels.Volume;
+using Generics;
+using Generics.Pool;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Voxels.CSG;
+using Voxels.DC;
+using Voxels.Materials;
+using Voxels.Volume;
 
-namespace Tuntenfisch.World
+namespace World
 {
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
     public class Chunk : MonoBehaviour, IPoolable

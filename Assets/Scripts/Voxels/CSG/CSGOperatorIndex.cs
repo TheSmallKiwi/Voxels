@@ -1,4 +1,4 @@
-﻿namespace Tuntenfisch.Voxels.CSG
+﻿namespace Voxels.CSG
 {
     public enum CSGOperatorIndex
     {

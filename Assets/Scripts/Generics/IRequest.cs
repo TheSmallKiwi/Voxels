@@ -1,4 +1,4 @@
-﻿namespace Tuntenfisch.Generics
+﻿namespace Generics
 {
     public interface IRequest
     {

@@ -3,6 +3,8 @@ using UnityEditor;
 using Tuntenfisch.Voxels.Procedural;
 using System.IO;
 using Unity.Mathematics;
+using Voxels.Noise;
+using Voxels.Procedural;
 
 namespace Tuntenfisch.Editor.Voxels
 {

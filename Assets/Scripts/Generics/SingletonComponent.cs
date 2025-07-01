@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace Tuntenfisch.Generics
+namespace Generics
 {
     public abstract class SingletonComponent<T> : MonoBehaviour where T : MonoBehaviour
     {

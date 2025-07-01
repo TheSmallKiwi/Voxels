@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/Position", order = (int)NodeType.Position)]
     [NodeTint(c_leafNodeColor)]

@@ -1,8 +1,9 @@
-﻿using Tuntenfisch.Attributes;
+﻿using Attributes;
 using Unity.Mathematics;
 using UnityEngine;
+using Voxels.Noise;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/Noise", order = (int)NodeType.Noise)]
     [NodeWidth(272)]

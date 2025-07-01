@@ -1,7 +1,8 @@
-﻿using Tuntenfisch.Attributes;
+﻿using Attributes;
 using UnityEngine;
+using Voxels.Noise;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/Domain Warp", order = (int)NodeType.DomainWarp)]
     [NodeWidth(272)]

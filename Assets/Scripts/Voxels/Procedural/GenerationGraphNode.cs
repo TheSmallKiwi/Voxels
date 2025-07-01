@@ -1,6 +1,6 @@
 ﻿using XNode;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     public abstract class GenerationGraphNode : Node
     {

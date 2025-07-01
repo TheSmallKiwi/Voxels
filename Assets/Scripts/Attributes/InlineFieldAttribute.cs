@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace Tuntenfisch.Attributes
+namespace Attributes
 {
     public class InlineFieldAttribute : PropertyAttribute { }
 }

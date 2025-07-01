@@ -1,4 +1,4 @@
-﻿namespace Tuntenfisch.Voxels.Procedural
+﻿namespace Voxels.Procedural
 {
 
     public enum NodeType

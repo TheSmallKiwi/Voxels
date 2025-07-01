@@ -3,7 +3,7 @@ using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace Tuntenfisch.Generics
+namespace Generics
 {
     public class AsyncComputeBuffer
     {

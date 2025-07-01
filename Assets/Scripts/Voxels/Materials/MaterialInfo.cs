@@ -1,7 +1,7 @@
 ﻿using System;
 using UnityEngine;
 
-namespace Tuntenfisch.Voxels.Materials
+namespace Voxels.Materials
 {
     [Serializable]
     public class MaterialInfo

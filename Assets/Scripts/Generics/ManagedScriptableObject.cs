@@ -1,9 +1,8 @@
-﻿#if UNITY_EDITOR
+﻿
 using UnityEditor;
-#endif
 using UnityEngine;
 
-namespace Tuntenfisch.Generics
+namespace Generics
 {
     public abstract class ManagedScriptableObject : ScriptableObject
     {

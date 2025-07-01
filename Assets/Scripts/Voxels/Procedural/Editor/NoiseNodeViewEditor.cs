@@ -2,6 +2,8 @@
 using UnityEditor;
 using XNodeEditor;
 using Tuntenfisch.Voxels.Procedural;
+using Voxels.Noise;
+using Voxels.Procedural;
 
 namespace Tuntenfisch.Editor.Voxels
 {

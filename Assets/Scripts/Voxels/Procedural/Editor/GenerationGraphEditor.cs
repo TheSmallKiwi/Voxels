@@ -1,6 +1,7 @@
 ﻿using Tuntenfisch.Editor;
 using UnityEditor;
 using UnityEngine;
+using Voxels.Procedural;
 using XNodeEditor;
 
 namespace Tuntenfisch.Voxels.Procedural.Editor

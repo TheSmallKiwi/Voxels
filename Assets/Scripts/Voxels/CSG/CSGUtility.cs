@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-namespace Tuntenfisch.Voxels.CSG
+namespace Voxels.CSG
 {
     public class CSGUtility : MonoBehaviour
     {

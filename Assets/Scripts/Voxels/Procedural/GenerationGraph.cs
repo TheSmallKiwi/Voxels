@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Tuntenfisch.Voxels.CSG;
-using Tuntenfisch.Voxels.Materials;
 using UnityEngine;
 using UnityEngine.Assertions;
+using Voxels.CSG;
+using Voxels.Materials;
+using Voxels.Noise;
 using XNode;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateAssetMenu(fileName = "Generation Graph", menuName = "Voxels/Generation Graph")]
     public class GenerationGraph : NodeGraph

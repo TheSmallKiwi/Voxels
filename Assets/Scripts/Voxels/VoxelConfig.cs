@@ -1,12 +1,12 @@
-﻿using Tuntenfisch.Voxels.DC;
-using Tuntenfisch.Voxels.Materials;
-using Tuntenfisch.Voxels.Procedural;
-using Tuntenfisch.Voxels.Volume;
-using Unity.Mathematics;
+﻿using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Assertions;
+using Voxels.DC;
+using Voxels.Materials;
+using Voxels.Procedural;
+using Voxels.Volume;
 
-namespace Tuntenfisch.Voxels
+namespace Voxels
 {
     public class VoxelConfig : MonoBehaviour
     {

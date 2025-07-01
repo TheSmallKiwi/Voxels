@@ -1,9 +1,9 @@
-﻿using Tuntenfisch.Attributes;
-using Tuntenfisch.Voxels.CSG;
+﻿using Attributes;
 using Unity.Mathematics;
 using UnityEngine;
+using Voxels.CSG;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/CSG Primitive", order = (int)NodeType.CSGPrimitive)]
     [NodeTint(c_internalNodeColor)]

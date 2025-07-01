@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Tuntenfisch.Generics;
-#if UNITY_EDITOR
+using Generics;
 using UnityEditor;
-#endif
 using UnityEngine;
+#if UNITY_EDITOR
+#endif
 
-namespace Tuntenfisch.Voxels.Materials
+namespace Voxels.Materials
 {
     [CreateAssetMenu(fileName = "Material Config", menuName = "Voxels/Material Config")]
     public class MaterialConfig : ManagedScriptableObject

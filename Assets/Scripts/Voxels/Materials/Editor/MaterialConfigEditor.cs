@@ -2,6 +2,7 @@ using System;
 using Tuntenfisch.Editor;
 using UnityEditor;
 using UnityEngine;
+using Voxels.Materials;
 
 namespace Tuntenfisch.Voxels.Materials.Editor
 {

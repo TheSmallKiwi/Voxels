@@ -1,8 +1,8 @@
-﻿using Tuntenfisch.Voxels.Materials;
-using Unity.Mathematics;
+﻿using Unity.Mathematics;
 using UnityEngine;
+using Voxels.Materials;
 
-namespace Tuntenfisch.Voxels.Procedural
+namespace Voxels.Procedural
 {
     [CreateNodeMenu("Generation Nodes/Material", order = (int)NodeType.Material)]
     [NodeTint(c_internalNodeColor)]
